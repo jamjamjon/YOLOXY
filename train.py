@@ -44,6 +44,8 @@ from utils.metrics import fitness
 from utils.plots import plot_labels
 from utils.torch_utils import EarlyStopping, ModelEMA, de_parallel, select_device, torch_distributed_zero_first
 
+
+
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
@@ -294,17 +296,15 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     stopper, stop = EarlyStopping(patience=opt.patience), False
 
 
-    # select different compute_loss 
-    if model.tag in ('YOLOX', 'yolox'):
+    # init compute_loss class
+    if model.tag.upper() == 'YOLOX':
         from models.loss.yolox import ComputeLoss
-        # ls = 'YOLOX'
-    elif model.tag in ('YOLOV5', 'yolov5'):
+    elif model.tag.upper() == 'YOLOV5':
         from models.loss.yolov5 import ComputeLoss
-        # ls = 'YOLOV5'
-    compute_loss = ComputeLoss(model)  # init loss class
+    compute_loss = ComputeLoss(model)  
+
 
     callbacks.run('on_train_start')     # before train
-
     CONSOLE.print(f"[b green]Training results: [b u blue]{save_dir}[/b u blue]\n"
                     f"[b green]Training epochs: [b cyan]{epochs}")
 
@@ -366,8 +366,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
 
                 # loss_items: tensor([2.09532, 3.03113, 1.25773, 1.07571], device='cuda:0'), loss tensor([7.45989], 
-                print(f"loss_items: {loss_items}, loss {loss}")
-                exit()
+                # print(f"loss_items: {loss_items}, loss {loss}")
+                # exit()
 
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
@@ -438,7 +438,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     'updates': ema.updates,
                     'optimizer': optimizer.state_dict(),
                     'wandb_id': loggers.wandb.wandb_run.id if loggers.wandb else None,
-                    'date': datetime.now().isoformat()}
+                    'date': datetime.now().isoformat()
+                }
 
                 # Save last, best and delete
                 torch.save(ckpt, last)
@@ -495,7 +496,7 @@ def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
-    parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
+    parser.add_argument('--data', type=str, default=ROOT / 'data/projects/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch-x.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=32, help='total batch size for all GPUs, -1 for autobatch')
