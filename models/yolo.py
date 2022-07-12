@@ -283,14 +283,14 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in (Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
                  BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x,
-                 RepConv, C3xSA, CrossConvSA   # update
+                 RepConv, C3xSA, CrossConvSA, SPPCSPC   # update
                  ):
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
 
             args = [c1, c2, *args[1:]]
-            if m in [BottleneckCSP, C3, C3TR, C3Ghost, C3x, C3xSA]:
+            if m in [BottleneckCSP, C3, C3TR, C3Ghost, C3x, C3xSA, SPPCSPC]:
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is nn.BatchNorm2d:
@@ -367,7 +367,7 @@ if __name__ == '__main__':
         _ = model(im, profile=True)
 
     elif opt.profile:  # profile forward-backward
-        results = profile(input=im, ops=[model], n=100)
+        results = profile(input=im, ops=[model], n=3)
 
     elif opt.test:  # test all models
         for cfg in Path(ROOT / 'models').rglob('yolo*.yaml'):
