@@ -19,9 +19,19 @@ YOLOX-BETA based on YOLOv5 code. To be continued...
 
 
 	2. structure
-	[] decoupled head: crossConv
+
+	[] decoupled head: 
+		- 1. not fuse  V.S.  fuse(brach_b, brach_c)  
+			=> params(1884799 -> 1690815) GFLOPs(4.5 -> 4.5) when c_ = min(c1 // 2, 256)
+			=> params(3109407 -> 2334367) GFLOPs(7.9 -> 7.9) when c_ = min(c1, 256); 
+		- 2. use Conv   V.S.   CrossConv
+			=> params(1690815 -> 1626751) GFLOPs(4.5 -> 4.2) when c_ = min(c1 // 2, 256)
+			=> params(2334367 -> 2077215) GFLOPs(7.9 -> 6.5) when c_ = min(c1, 256); 
+		- TODO: AP test
+
+
 	[] R-bottleneck: switch 1x1 conv and 3x3 conv
-	[] csp + spp, csp + pan , csp + head
+	[] csp + spp, csp + pan
 	[] yolov7 head and backbone(E-ELAN)
 
 
