@@ -90,15 +90,39 @@ class ComputeLoss:
                 p_classes = pcls[idx]       # pred cls
                 p_objs = pobj[idx]          # pred obj
 
-                # do label assignment: SimOTA 
-                (
-                    finalists_mask,
-                    num_anchor_assigned,   
-                    tcls_, 
-                    tobj_, 
-                    tbox_, 
-                    tbox_l1_,
-                 ) = self.get_assignments(t_bboxes, t_classes, p_bboxes, p_classes, p_objs)
+                try:
+                    # do label assignment: SimOTA 
+                    (
+                        finalists_mask,
+                        num_anchor_assigned,   
+                        tcls_, 
+                        tobj_, 
+                        tbox_, 
+                        tbox_l1_,
+                     ) = self.get_assignments(t_bboxes, t_classes, p_bboxes, p_classes, p_objs)
+                
+                except RuntimeError:  
+                    print("OOM RuntimeError during label assignment. CPU mode is applied in this batch.")
+
+                    # put data into cpu
+                    t_bboxes.to('cpu').float()
+                    t_classes.to('cpu').float()
+                    p_bboxes.to('cpu').float()
+                    p_classes.to('cpu').float()
+                    p_objs.to('cpu').float()
+                    self.xy_shifts.to('cpu').float()
+                    self.expanded_strides.to('cpu').float()
+
+                    # do label assignment: SimOTA 
+                    (
+                        finalists_mask,
+                        num_anchor_assigned,   
+                        tcls_, 
+                        tobj_, 
+                        tbox_, 
+                        tbox_l1_,
+                     ) = self.get_assignments(t_bboxes, t_classes, p_bboxes, p_classes, p_objs)
+
 
                 # num of assigned anchors in one batch
                 num_finalists += num_anchor_assigned    
@@ -242,10 +266,25 @@ class ComputeLoss:
         del pair_wise_cls_loss, cost, pair_wise_ious, pair_wise_ious_loss
 
 
-        # empty cuda cache
+        # 7. empty cuda cache
         torch.cuda.empty_cache() 
 
-        # 7. has anchor point assigned
+        # TODO: to check
+        # 8. put the data back where it is => if data in cpu, put back to gpu
+        t_bboxes = t_bboxes.to(self.device)
+        t_classes = t_classes.to(self.device)
+        p_bboxes = p_bboxes.to(self.device)
+        p_classes = p_classes.to(self.device)
+        p_objs = p_objs.to(self.device)
+        self.xy_shifts = self.xy_shifts.to(self.device)
+        self.expanded_strides = self.expanded_strides.to(self.device)
+
+        pred_ious_this_matching = pred_ious_this_matching.to(self.device)
+        matched_gt_inds = matched_gt_inds.to(self.device)
+        finalists_mask = finalists_mask.to(self.device)
+
+
+        # 9. has anchor point assigned
         if num_anchor_assigned > 0:
             # tcls, tbox, tobj
             tcls_ = t_classes[matched_gt_inds]
