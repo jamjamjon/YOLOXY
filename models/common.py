@@ -264,16 +264,18 @@ class Decouple(nn.Module):
     # Decoupled head
     def __init__(self, c1, nc=80, na=3):  # ch_in, num_classes, num_anchors
         super().__init__()
-        # c_ = min(c1, 256)  # min(c1, nc * na)
-        c_ = min(c1 // 2, 256)  # min(c1, nc * na)
+        c_ = min(c1, 256)  # min(c1, nc * na)
+        # c_ = min(c1 // 2, 256)  # min(c1, nc * na)
 
         self.na = na  # number of anchors
         self.nc = nc  # number of classes
 
         self.a = Conv(c1, c_, 1)    # stem, 1x1 Conv2d + BN + SiLU
-        self.b1, self.b2 = Conv(c_, c_, 3), nn.Conv2d(c_, na * 4, 1)    # box
+        # self.b1, self.b2 = Conv(c_, c_, 3), nn.Conv2d(c_, na * 4, 1)    # box
+        self.b1, self.b2 = CrossConv(c_, c_, 3, 1), nn.Conv2d(c_, na * 4, 1)    # box
         self.b3 = nn.Conv2d(c_, na * 1, 1)  # obj  
-        self.c1, self.c2 = Conv(c_, c_, 3), nn.Conv2d(c_, na * nc, 1)   # cls
+        # self.c1, self.c2 = Conv(c_, c_, 3), nn.Conv2d(c_, na * nc, 1)   # cls
+        self.c1, self.c2 = CrossConv(c_, c_, 3, 1), nn.Conv2d(c_, na * nc, 1)   # cls
 
         # c = [int(x + na * 5) for x in (c_ - na * 5) * torch.linspace(1, 0, 4)]  # linear channel descent
         # self.b1, self.b2, self.b3 = Conv(c_, c_, 3), Conv(c_, c_, 3), nn.Conv2d(c_, na * 5, 1)  # va

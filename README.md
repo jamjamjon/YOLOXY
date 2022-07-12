@@ -15,8 +15,11 @@ YOLOX-BETA based on YOLOv5 code. To be continued...
 	[] x-n-rep-sa.yaml (sa will increase 0.8% map in yolov7-s-sa(37.2 -> 38))
 
 
+	[] crossConv decoupled head experiments: c_ = min(c1 // 2, 256) ?  c_ = min(c1, 256) ?  up to above experiments
+
+
 	2. structure
-	[] decoupled head: up to above experiments
+	[] decoupled head: crossConv
 	[] R-bottleneck: switch 1x1 conv and 3x3 conv
 	[] csp + spp, csp + pan , csp + head
 	[] yolov7 head and backbone(E-ELAN)
