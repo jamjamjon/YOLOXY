@@ -359,6 +359,8 @@ if __name__ == '__main__':
     for y_ in y:
         print(y_.shape)
 
+    # print(model)
+
 
     # Options
     if opt.line_profile:  # profile layer by layer

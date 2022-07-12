@@ -3,6 +3,9 @@ YOLOX-BETA based on YOLOv5 code. To be continued...
 
 # TODO
 
+	0. test yolov6 backbone speed.   & test OOM change!
+
+
 	1. to train(anchor free, not anchor-based): 
 
 	!!! 
