@@ -36,7 +36,8 @@ YOLOX-BETA based on YOLOv5 code. To be continued...
 
 
 	3. features
-	[] compute loss code keep refine, cpu parts 
+	[] cancel mosiac in last 20 epochs for small model.
+	[] compute loss code keep refine
 	[] Mac calculations
 	[] hyps config
 	[] export rknn
@@ -58,7 +59,6 @@ YOLOX-BETA based on YOLOv5 code. To be continued...
 	[x] support yolov5 and yolox both
 	[x] s-iou
 	[x] val. tag, not include in weights(.pt)
-	[x] remove hyp evolve part
 	[x] cfg and weights
 	[x] REPVGG-block  => to test(map & speed)
 	[x] sa block -> increse 0.8% map =====> to test(speed)

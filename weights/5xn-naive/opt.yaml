@@ -1,9 +1,9 @@
 weights: ./runs/train/exp/weights/last.pt
 cfg: ''
-data: data/coco.yaml
+data: data/projects/coco.yaml
 hyp: data/hyps/hyp.scratch-low.yaml
 epochs: 400
-batch_size: 32
+batch_size: 70
 imgsz: 640
 rect: false
 resume: true

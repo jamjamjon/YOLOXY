@@ -83,20 +83,20 @@ class Loggers():
 
         # Message
         if not wandb:
-            # prefix = colorstr('Weights & Biases: ')
-            prefix = '[bold gold1]Weights & Biases: [/bold gold1]'
-            s = f"{prefix}run 'pip install wandb' to automatically track and visualize YOLOv5 🚀 runs (RECOMMENDED)"
-            # self.logger.info(emojis(s))
-            self.logger.print(emojis(s))
+            prefix = colorstr('Weights & Biases: ')
+            # prefix = '[bold gold1]Weights & Biases: [/bold gold1]'
+            s = f"{prefix}run 'pip install wandb' to automatically track and visualize YOLOX-BETA 🚀 runs (RECOMMENDED)"
+            self.logger.info(emojis(s))
+            # self.logger.print(emojis(s))
 
         # TensorBoard
         s = self.save_dir
         # if 'tb' in self.include and not self.opt.evolve:
         if 'tb' in self.include:
-            # prefix = colorstr('TensorBoard: ')
-            prefix = 'TensorBoard: '
-            # self.logger.info(f"{prefix}Start with 'tensorboard --logdir {s.parent}', view at http://localhost:6006/")
-            self.logger.print(f"[bold gold1]{prefix}[/bold gold1]Start with 'tensorboard --logdir {s.parent}', view at http://localhost:6006/")
+            prefix = colorstr('TensorBoard: ')
+            # prefix = 'TensorBoard: '
+            self.logger.info(f"{prefix}Start with 'tensorboard --logdir {s.parent}', view at http://localhost:6006/")
+            # self.logger.print(f"[bold gold1]{prefix}[/bold gold1]Start with 'tensorboard --logdir {s.parent}', view at http://localhost:6006/")
             self.tb = SummaryWriter(str(s))
 
         # W&B
@@ -111,7 +111,7 @@ class Loggers():
                 #     "YOLOv5 temporarily requires wandb version 0.12.10 or below. Some features may not work as expected."
                 # )
                 self.logger.log(
-                    "YOLOv5 temporarily requires wandb version 0.12.10 or below. Some features may not work as expected."
+                    "YOLOX-BETA temporarily requires wandb version 0.12.10 or below. Some features may not work as expected."
                 )
         else:
             self.wandb = None

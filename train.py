@@ -66,8 +66,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     if isinstance(hyp, str):
         with open(hyp, errors='ignore') as f:
             hyp = yaml.safe_load(f)  # load hyps dict
-    # LOGGER.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
-    CONSOLE.print(f"[bold gold1]Hyps:[/bold gold1] {', '.join(f'[white]{k}[/white]={v}' for k, v in hyp.items())}")
 
     # Save run settings
     with open(save_dir / 'hyp.yaml', 'w') as f:
@@ -78,7 +76,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # Loggers
     data_dict = None
     if RANK in {-1, 0}:
-        loggers = Loggers(save_dir, weights, opt, hyp, CONSOLE)  # loggers instance
+        loggers = Loggers(save_dir, weights, opt, hyp, LOGGER)  # loggers instance
         if loggers.wandb:
             data_dict = loggers.wandb.data_dict
             if resume:
@@ -113,7 +111,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(csd, strict=False)  # load
         # LOGGER.info(f'> Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
-        CONSOLE.print(f'[bold green]Transfer Learning: [/bold green] {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
     else:
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
 
@@ -132,7 +129,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     imgsz = check_img_size(opt.imgsz, gs, floor=gs * 2)  # verify imgsz is gs-multiple
 
     # Batch size
-    # if RANK == -1 and batch_size == -1 and model.tag in ('yolov5', 'YOLOV5'):  # single-GPU only, estimate best batch size
     if RANK == -1 and batch_size == -1:  # single-GPU only, estimate best batch size
         batch_size = check_train_batch_size(model, imgsz, amp)
         loggers.on_params_update({"batch_size": batch_size})
@@ -164,8 +160,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     optimizer.add_param_group({'params': g[1]})  # add g1 (BatchNorm2d weights)
     # LOGGER.info(f"{colorstr('optimizer:')} {type(optimizer).__name__} with parameter groups "
     #             f"{len(g[1])} weight (no decay), {len(g[0])} weight, {len(g[2])} bias")
-    CONSOLE.print(f"[bold green]optimizer:[/bold green] {type(optimizer).__name__} with parameter groups "
-                f"{len(g[1])} weight (no decay), {len(g[0])} weight, {len(g[2])} bias")
     del g
 
     # Scheduler
@@ -213,8 +207,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # SyncBatchNorm
     if opt.sync_bn and cuda and RANK != -1:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
-        # LOGGER.info('Using SyncBatchNorm()')
-        CONSOLE.print('Using SyncBatchNorm()')
+        LOGGER.info('Using SyncBatchNorm()')
 
     # Trainloader
     train_loader, dataset = create_dataloader(train_path,
@@ -305,7 +298,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
 
     callbacks.run('on_train_start')     # before train
-    CONSOLE.print(f"[b green]Training results: [b u blue]{save_dir}[/b u blue]\n"
+    CONSOLE.print(f"[b green]Training settings: [b u blue]{save_dir}[/b u blue]\n"
                     f"[b green]Training epochs: [b cyan]{epochs}")
 
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
@@ -551,7 +544,7 @@ def main(opt, callbacks=Callbacks()):
         with open(Path(ckpt).parent.parent / 'opt.yaml', errors='ignore') as f:
             opt = argparse.Namespace(**yaml.safe_load(f))  # replace
         opt.cfg, opt.weights, opt.resume = '', ckpt, True  # reinstate
-        LOGGER.info(f'Resuming training from {ckpt}')
+        LOGGER.info(colorstr(f'Resuming training from: ') + colorstr('u', 'b', 'blue', ckpt) )
     else:
         opt.data, opt.cfg, opt.hyp, opt.weights, opt.project = \
             check_file(opt.data), check_yaml(opt.cfg), check_yaml(opt.hyp), str(opt.weights), str(opt.project)  # checks
