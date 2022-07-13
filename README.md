@@ -1,5 +1,7 @@
 YOLOX-BETA based on YOLOv5 code. To be continued...
 
+baseline version: check network structure. Only tested 2 models: x-n-rep.yaml and x-n.yaml 
+
 
 # TODO
 
