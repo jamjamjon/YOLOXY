@@ -218,6 +218,7 @@ def fuse_conv_and_bn(conv, bn):
     return fusedconv
 
 
+# TODO: calculate MAC
 def model_info(model, verbose=False, img_size=640):
     # Model information. img_size may be int or list, i.e. img_size=640 or img_size=[640, 320]
     n_p = sum(x.numel() for x in model.parameters())  # number parameters
@@ -241,7 +242,6 @@ def model_info(model, verbose=False, img_size=640):
 
     name = Path(model.yaml_file).stem.replace('yolov5', 'YOLOv5') if hasattr(model, 'yaml_file') else 'Model'
     # LOGGER.info(f"> {name} summary: {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
-    # CONSOLE.print(Panel.fit(f"Model: {name} | Summary: {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}"))
     CONSOLE.print(Panel.fit(f"[bold green]{name} ==> {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}"), style="")
 
 

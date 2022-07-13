@@ -65,10 +65,32 @@ YOLOX-BETA based on YOLOv5 code. To be continued...
 	[x] YOLOR module in Detect() head
 	[x] crossconv 
 
+# Test Corsely 
 
+### num of c3x / bottleneck (yolov6)
+
+	- 1. cfg = x-n-rep.yaml | backbone c3x num = [3,6,9,3]  
+	fused:  249 layers, 1974847 parameters, 1397727 gradients, 4.5 GFLOPs
+
+      Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                   input                  output
+     2045695        4.67         0.426         9.969         14.84        (1, 3, 640, 640)                    list
+
+	- 2. cfg = x-n-rep.yaml | backbone c3x num = [6,12,18,6]  
 	
-	
-	
+	fused : 298 layers, 2161503 parameters, 1584383 gradients, 5.0 GFLOPs
+	Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                   input                  output
+     2233151        5.23         0.487         11.43         16.96        (1, 3, 640, 640)                    list
+
+
+### yolov7 backbone speed
+
+	- yolov7-tiny-silu.yaml
+  	Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                   input                  output
+ 	7759199       17.74         0.774         10.01         23.02        (1, 3, 640, 640)                    list
+
+ 	- yolov7.yaml
+      Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                   input                  output
+    40301087       118.7         2.982         38.18          89.1        (1, 3, 640, 640)                    list
 
 
 

@@ -367,7 +367,7 @@ if __name__ == '__main__':
         _ = model(im, profile=True)
 
     elif opt.profile:  # profile forward-backward
-        results = profile(input=im, ops=[model], n=3)
+        results = profile(input=im, ops=[model], n=100)
 
     elif opt.test:  # test all models
         for cfg in Path(ROOT / 'models').rglob('yolo*.yaml'):
