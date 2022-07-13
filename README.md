@@ -1,7 +1,12 @@
 YOLOX-BETA based on YOLOv5 code. To be continued...
 
 
+
 # TODO
+
+	重构整个模型架构，主要测试x-s大小的模型； 严格控制 PARAMS和FLOPS
+	包括但不限于decoupled head部分设计； c3x添加ese模块/SA（backbone的最后一个； neck中的每一个，分别测试速度）；silu和relu速度测试权衡问题（两套网络）；是否需要RepConv，两套模型测试map；
+
 
 	0. test yolov6 backbone speed.   & test OOM change!
 
