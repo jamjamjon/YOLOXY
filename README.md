@@ -18,13 +18,13 @@ To be continued...
 |---|---|---|---|---|---
 |yolov5s-silu(v6.0) 	|640 |37.4 |**7.23** |**16.53** |**7.7** 
 |yolov5s-relu(v6.0) 	|640 | x   |**7.23** |**16.53** |**6.7**
-|x-s-half-head-silu 	|640 |x    |7.8  |17.6 | |8.7
-|x-s-half-head-relu 	|640 |x    |7.8  |17.6 | |8.0
-|x-s-silu 				|640 |x    |9.0  |26.4 | |9.8
-|x-s-relu 				|640 |x    |9.0  |26.4 | |9.2
-|x-s-silu-v6-style 		|640 |x    |9.0  |26.4 | |11.0
-|x-s-relu-v6-style 		|640 |x    |9.7  |28.6 | |9.9
-|x-s-cross-conv-head 	|640 |x    |  |	| |
+|x-s-half-head-silu 	|640 |x    |7.8  |17.6 |8.7
+|x-s-half-head-relu 	|640 |x    |7.8  |17.6 |8.0
+|x-s-silu 				|640 |x    |9.0  |26.4 |9.8
+|x-s-relu 				|640 |x    |9.0  |26.4 |9.2
+|x-s-silu-v6-style 		|640 |x    |9.0  |26.4 |11.0
+|x-s-relu-v6-style 		|640 |x    |9.7  |28.6 |9.9
+|x-s-cross-conv-head 	|640 |x    |  |	| 
 
 
 **yolov6 style: in one word, based on yolov5n, then doubled num of bottleneck block in backbone, they compare this model which has much bigger Params and GFLOPS to yolov5n, then comes the higher mAP results. As for inference speed, replacing all SiLU() with ReLU(). That's funny.**
