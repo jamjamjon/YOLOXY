@@ -214,15 +214,14 @@ class Model(nn.Module):
     #             LOGGER.info('%10.3g' % (m.w.detach().sigmoid() * 2))  # shortcut weights
 
     def fuse(self):  # fuse model Conv2d() + BatchNorm2d() layers
-        CONSOLE.print('[bold magenta]Fusing layers... ')
-        for m in self.model.modules():
+        LOGGER.info(f"{colorstr('bright_cyan', 'Fusing layers...')}")
 
+        for m in self.model.modules():   # TODO: move to Conv()
             # Conv, DWConv 
             if isinstance(m, (Conv, DWConv)) and hasattr(m, 'bn'):
                 m.conv = fuse_conv_and_bn(m.conv, m.bn)  # update conv
                 delattr(m, 'bn')  # remove batchnorm
                 m.forward = m.forward_fuse  # update forward
-
             # RepConv
             if isinstance(m, RepConv):
                 m.fuse_repconv()

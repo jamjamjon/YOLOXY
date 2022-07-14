@@ -625,7 +625,7 @@ def one_cycle(y1=0.0, y2=1.0, steps=100):
 # update
 def colorstr(*input):
     # Colors a string https://en.wikipedia.org/wiki/ANSI_escape_code, i.e.  colorstr('blue', 'hello world')
-    *args, string = input if len(input) > 1 else ('magenta', 'b', input[0])  # color arguments, string
+    *args, string = input if len(input) > 1 else ('bright_cyan', 'b', input[0])  # color arguments, string
     colors = {
         'black': '\033[30m',  # basic colors
         'red': '\033[31m',

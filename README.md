@@ -25,6 +25,7 @@ To be continued...
 |x-s-silu-v6-style 		|640 |-    |9.0  |26.4 |11.0
 |x-s-relu-v6-style 		|640 |-    |9.7  |28.6 |9.9
 |x-s-cross-not-half-head 	|640 |ing    |7.9  |17.0	|9.6 
+|x-s-cross-half-head 	|640 |todo    |7.4  |14.8	|8.9 
 
 
 **yolov6 style: in one word, based on yolov5n, then doubled num of bottleneck block in backbone, they compare this model which has much bigger Params and GFLOPS to yolov5n, then comes the higher mAP results. As for inference speed, replacing all SiLU() with ReLU(). That's funny.**
@@ -39,11 +40,12 @@ To be continued...
 	[x] fused decoupled head: half head ??? wait to see experiments 
 	[x] sa block -> increse 0.8% map in xs model =====> to test(speed)
 	[x] siou
-	[] Is RepConv() must be better mAP than Conv() ??  Fused RepConv() infer speed is same as fused Conv()
+	[x] close mosaic in the last 5% epochs
+	[x] hyps config
 
-	[] cancel mosiac in last 20 epochs for small model.
-	[] Mac calculations
-	[] hyps config
+	[] Is RepConv() must be better mAP than Conv() ??  Fused RepConv() infer speed is same as fused Conv()
+	
+	[] Mac calculations in model_info()
 	[] export rknn
 	
 	[] ATSS 

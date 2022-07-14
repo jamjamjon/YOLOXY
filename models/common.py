@@ -253,8 +253,8 @@ class Decouple(nn.Module):
         self.na = na  # number of anchors
         self.nc = nc  # number of classes
 
-        c_ = min(c1, 256)  # min(c1, nc * na)
-        # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
+        # c_ = min(c1, 256)  # min(c1, nc * na)
+        c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
 
         self.a = Conv(c1, c_, 1)        # stem
         

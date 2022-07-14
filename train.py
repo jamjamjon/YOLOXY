@@ -311,22 +311,24 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
             dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
 
+        # close mosaic in the last 5% epochs
+        if (epoch == int(epochs * 0.95)) and (epoch >= 20):   # at least train 50 epochs 
+            LOGGER.info(f"{colorstr('> Mosaic augmentation closed.')}")
+            dataset.mosaic = False  # close mosaic
+
         # mloss setting
         if model.tag.lower() == 'yolox':
             mloss = torch.zeros(4, device=device)  # mean losses
             LOGGER.info(('\n' + '%10s' * 8) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'L1', 'LABELS', 'SIZE'))
-            # CONSOLE.print(('\n' + '[gold1 b]%10s' * 8) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'L1', 'LABELS', 'SIZE'))
         elif model.tag.lower() == 'yolov5':
             mloss = torch.zeros(3, device=device)  # mean losses
             LOGGER.info(('\n' + '%10s' * 7) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'LABELS', 'SIZE'))
 
-
+        # train_loader
         if RANK != -1:
             train_loader.sampler.set_epoch(epoch)
         pbar = enumerate(train_loader)
         if RANK in {-1, 0}:
-            # from rich.progress import track
-            # pbar = track(pbar, total=nb)
             pbar = tqdm(pbar, total=nb, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5')  # progress bar
         optimizer.zero_grad()
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
@@ -357,11 +359,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             with torch.cuda.amp.autocast(amp):
                 pred = model(imgs)  # forward
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
-
-                # loss_items: tensor([2.09532, 3.03113, 1.25773, 1.07571], device='cuda:0'), loss tensor([7.45989], 
-                # print(f"loss_items: {loss_items}, loss {loss}")
-                # exit()
-
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad:
@@ -409,7 +406,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                            save_dir=save_dir,
                                            plots=False,
                                            callbacks=callbacks,
-                                           # compute_loss=compute_loss
+                                           compute_loss=None
                                            )
 
             # Update best mAP
@@ -474,7 +471,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                     verbose=True,
                                     plots=plots,
                                     callbacks=callbacks,
-                                    # compute_loss=compute_loss
+                                    compute_loss=None
                                     )  # val best model with plots
                     if is_coco:
                         callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)
@@ -490,7 +487,7 @@ def parse_opt(known=False):
     parser.add_argument('--weights', type=str, default='', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument('--data', type=str, default=ROOT / 'data/projects/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch-x.yaml', help='hyperparameters path')
+    parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/x.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs, -1 for autobatch')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='train, val image size (pixels)')
