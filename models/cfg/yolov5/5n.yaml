@@ -13,7 +13,6 @@ anchors:
 
 
 
-
 # [from, number, module, args]
 backbone:
   [[-1, 1, Conv, [64, 3, 2]],  # 0-P1/2

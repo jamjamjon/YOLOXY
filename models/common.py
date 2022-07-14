@@ -35,50 +35,6 @@ def autopad(k, p=None):  # kernel, padding
         p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
     return p
 
-# ------------------------------------------------
-#   yolov7
-# ------------------------------------------------
-class MP(nn.Module):
-    def __init__(self, k=2):
-        super(MP, self).__init__()
-        self.m = nn.MaxPool2d(kernel_size=k, stride=k)
-
-    def forward(self, x):
-        return self.m(x)
-
-
-class SP(nn.Module):
-    def __init__(self, k=3, s=1):
-        super(SP, self).__init__()
-        self.m = nn.MaxPool2d(kernel_size=k, stride=s, padding=k // 2)
-
-    def forward(self, x):
-        return self.m(x)
-    
-
-class SPPCSPC(nn.Module):
-    # CSP https://github.com/WongKinYiu/CrossStagePartialNetworks
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, k=(5, 9, 13)):
-        super(SPPCSPC, self).__init__()
-        c_ = int(2 * c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, c_, 1, 1)
-        self.cv2 = Conv(c1, c_, 1, 1)
-        self.cv3 = Conv(c_, c_, 3, 1)
-        self.cv4 = Conv(c_, c_, 1, 1)
-        self.m = nn.ModuleList([nn.MaxPool2d(kernel_size=x, stride=1, padding=x // 2) for x in k])
-        self.cv5 = Conv(4 * c_, c_, 1, 1)
-        self.cv6 = Conv(c_, c_, 3, 1)
-        self.cv7 = Conv(2 * c_, c2, 1, 1)
-
-    def forward(self, x):
-        x1 = self.cv4(self.cv3(self.cv1(x)))
-        y1 = self.cv6(self.cv5(torch.cat([x1] + [m(x1) for m in self.m], 1)))
-        y2 = self.cv2(x)
-        return self.cv7(torch.cat((y1, y2), dim=1))  
-# ------------------------------------------------
-#   yolov7
-# ------------------------------------------------
-
 
 class Conv(nn.Module):
     # Standard convolution
@@ -87,12 +43,14 @@ class Conv(nn.Module):
         self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p), groups=g, bias=False)
         self.bn = nn.BatchNorm2d(c2)
         self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())  # nn.LeakyReLU()
+        # self.act = nn.ReLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())  # nn.LeakyReLU()
 
     def forward(self, x):
         return self.act(self.bn(self.conv(x)))
 
     def forward_fuse(self, x):
         return self.act(self.conv(x))
+
 
 
 class CB(nn.Module):
@@ -230,6 +188,34 @@ class C3x(C3):
         self.m = nn.Sequential(*(CrossConv(c_, c_, 3, 1, g, 1.0, shortcut) for _ in range(n)))
 
 
+class ESE(nn.Module):
+    """ Effective Squeeze-Excitation
+    From `CenterMask : Real-Time Anchor-Free Instance Segmentation` - https://arxiv.org/abs/1911.06667
+    Forward(640x640): 0.1591 ms
+    """
+    def __init__(self, c1, act=True):
+        super().__init__()
+        self.fc = nn.Conv2d(c1, c1, kernel_size=1, padding=0)
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())  # nn.LeakyReLU()
+
+    def forward(self, x):
+        return x * self.act(self.fc(x.mean((2, 3), keepdim=True)))
+
+
+class C3xESE(nn.Module):
+    # CSP Bottleneck with 3 convolutions + ESE
+    def __init__(self, c1, c2, n=1, ese=True, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.m = nn.Sequential(*(CrossConv(c_, c_, 3, 1, g, 1.0, shortcut) for _ in range(n)))
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(2 * c_, c2, 1)  # optional act=FReLU(c2)
+        self.ese = ESE(c2) if ese is True else nn.Identity()
+
+    def forward(self, x):
+        return self.cv3(self.ese(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1)))
+
 
 class SPPF(nn.Module):
     # Spatial Pyramid Pooling - Fast (SPPF) layer for YOLOv5 by Glenn Jocher
@@ -264,47 +250,34 @@ class Decouple(nn.Module):
     # Decoupled head
     def __init__(self, c1, nc=80, na=3):  # ch_in, num_classes, num_anchors
         super().__init__()
-        # c_ = min(c1, 256)  # min(c1, nc * na)
-        c_ = min(c1 // 2, 256)  # min(c1, nc * na)
-
         self.na = na  # number of anchors
         self.nc = nc  # number of classes
 
-        self.a = Conv(c1, c_, 1)    # stem, 1x1 Conv2d + BN + SiLU
+        c_ = min(c1, 256)  # min(c1, nc * na)
+        # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
 
-        # fuse b,c brach
-        # self.bc = Conv(c_, c_, 3)
-        # self.bc = CrossConv(c_, c_, 3, 1)
+        self.a = Conv(c1, c_, 1)        # stem
+        
+        # self.bc = Conv(c_, c_, 3)     # fused b,c brach
+        # => params(1690815 -> 1626751) GFLOPs(4.5 -> 4.2) when c_ = min(c1 // 2, 256)
+        # => params(2334367 -> 2077215) GFLOPs(7.9 -> 6.5) when c_ = min(c1, 256);
+        self.bc = CrossConv(c_, c_, 3, 1)
 
-        # branch b
-        self.b1 = Conv(c_, c_, 3)
-        # self.b1 = CrossConv(c_, c_, 3, 1)     # box  => CrossConv
-        self.b2 = nn.Conv2d(c_, na * 4, 1)      # box
-        self.b3 = nn.Conv2d(c_, na * 1, 1)      # obj  
-
-        # branch c
-        self.c1 = Conv(c_, c_, 3)
-        # self.c1 = CrossConv(c_, c_, 3, 1)   # cls  => CrossConv
-        self.c2 = nn.Conv2d(c_, na * nc, 1)   # cls
+        self.b1 = nn.Conv2d(c_, na * 4, 1)      # box
+        self.b2 = nn.Conv2d(c_, na * 1, 1)      # obj  
+        self.c = nn.Conv2d(c_, na * nc, 1)      # cls
 
 
     def forward(self, x):
         bs, nc, ny, nx = x.shape  # BCHW
-        x = self.a(x)
-        b_box = self.b2(self.b1(x))       # box
-        b_obj = self.b3(self.b1(x))       # obj
-        c = self.c2(self.c1(x))           # cls
-
-        # b_box = self.b2(self.bc(x))     # box
-        # b_obj = self.b3(self.bc(x))     # obj
-        # c = self.c2(self.bc(x))         # cls
+        x = self.bc(self.a(x))
+        b_box = self.b1(x)     # box
+        b_obj = self.b2(x)     # obj
+        c = self.c(x)         # cls
         
         return torch.cat((b_obj.view(bs, self.na, 1, ny, nx), 
                           b_box.view(bs, self.na, 4, ny, nx), 
                           c.view(bs, self.na, self.nc, ny, nx)), 2).view(bs, -1, ny, nx)
-
-
-
 
 
 class DetectMultiBackend(nn.Module):
@@ -424,9 +397,7 @@ class Detect(nn.Module):
         self.anchor_grid = [torch.zeros(1)] * self.nl  # init anchor grid
         self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(nl,na,2)
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
-
-        # self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
-        self.m = nn.ModuleList(Decouple(x, self.nc, self.na) for x in ch)  # decoupled head
+        self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
 
     def forward(self, x):
         z = []  # inference output
@@ -467,8 +438,8 @@ class Detect(nn.Module):
         return grid, anchor_grid
 
 
-
 class DetectX(nn.Module):
+    # Anchor free Detect()
     stride = None  # strides computed during build
     export = False  # export mode
 
@@ -483,8 +454,8 @@ class DetectX(nn.Module):
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
         # Head
-        # self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # coupled head
-        self.m = nn.ModuleList(Decouple(x, self.nc, self.na) for x in ch)     # decoupled head
+        # self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)    # couple head
+        self.m = nn.ModuleList(Decouple(x, self.nc, self.na) for x in ch)           # decouple head
 
 
     def forward(self, x):

@@ -184,14 +184,14 @@ class Model(nn.Module):
                 # decoupled head
                 if type(mi) is Decouple:
                     # obj
-                    b = mi.b3.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
+                    b = mi.b2.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
                     b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-                    mi.b3.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
+                    mi.b2.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
                     # box
                     # cls
-                    b = mi.c2.bias.data
+                    b = mi.c.bias.data
                     b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-                    mi.c2.bias = torch.nn.Parameter(b, requires_grad=True)
+                    mi.c.bias = torch.nn.Parameter(b, requires_grad=True)
                
                 # coupled head
                 else:  # default
@@ -283,14 +283,14 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in (Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
                  BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x,
-                 RepConv, C3xSA, CrossConvSA, SPPCSPC   # update
+                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE,   # update
                  ):
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
 
             args = [c1, c2, *args[1:]]
-            if m in [BottleneckCSP, C3, C3TR, C3Ghost, C3x, C3xSA, SPPCSPC]:
+            if m in [BottleneckCSP, C3, C3TR, C3Ghost, C3x, C3xSA, SPPCSPC, C3xESE]:
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is nn.BatchNorm2d:
@@ -298,17 +298,16 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
 
-        # Head for yolov5
+        # Detect for yolov5
         elif m is Detect:
             args.append([ch[x] for x in f])
             if isinstance(args[1], int):  # number of anchors
                 args[1] = [list(range(args[1] * 2))] * len(f)
 
-        # Head for yolox
+        # Detect for yolox
         elif m is DetectX:
             args.append([ch[x] for x in f])
 
-        
         elif m is Contract:
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
@@ -322,7 +321,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         m_.i, m_.f, m_.type, m_.np = i, f, t, np  # attach index, 'from' index, type, number params
 
         # save model structure to table
-        model_table.add_row(str(i), str(f), str(n_), str(np), str(t), str(args))
+        model_table.add_row(str(i), str(f), str(n_), str(np), str(t), str(args))  # TODO args too long with anchors
 
         save.extend(x % i for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
         layers.append(m_)
@@ -336,62 +335,88 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='5xn.yaml', help='model.yaml')
+    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size h,w')
     parser.add_argument('--batch-size', type=int, default=1, help='total batch size for all GPUs')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--cfg', type=str, default='', help='model.yaml')
     parser.add_argument('--profile', action='store_true', help='profile model speed')
     parser.add_argument('--line-profile', action='store_true', help='profile model speed layer by layer')
-    parser.add_argument('--test', action='store_true', help='test all yolo*.yaml')
-    parser.add_argument('--fuse', action='store_true', help='test all yolo*.yaml')
-    parser.add_argument('--check', action='store_true', help='test all yolo*.yaml')
+    # parser.add_argument('--test', action='store_true', help='test all yolo*.yaml')
+    parser.add_argument('--detail', action='store_true', help='print model')
+    parser.add_argument('--fuse', action='store_true', help='fuse model')
+    parser.add_argument('--check', action='store_true', help='check ops')
+    parser.add_argument('--output', action='store_true', help='show output shape')
     opt = parser.parse_args()
     opt.cfg = check_yaml(opt.cfg)  # check YAML
     print_args(vars(opt))
 
-    # device
-    device = select_device(opt.device)
-
-    # Create model
-    im = torch.rand(opt.batch_size, 3, 640, 640).to(device)
-    model = Model(opt.cfg).to(device)
-
-    y = model(im)
-    for y_ in y:
-        print(y_.shape)
-
-    # print(model)
+    device = select_device(opt.device)   # device
+    im = torch.rand(opt.batch_size, 3, opt.imgsz, opt.imgsz).to(device)     # dummpy input
 
 
     # Options
-    if opt.line_profile:  # profile layer by layer
-        _ = model(im, profile=True)
+    if opt.cfg:
 
-    elif opt.profile:  # profile forward-backward
-        results = profile(input=im, ops=[model], n=100)
+        # build model
+        model = Model(opt.cfg).to(device)
 
-    elif opt.test:  # test all models
-        for cfg in Path(ROOT / 'models').rglob('yolo*.yaml'):
-            try:
-                _ = Model(cfg)
-            except Exception as e:
-                print(f'Error in {cfg}: {e}')
+        # fuse
+        if opt.fuse:
+            model.fuse()
 
-    elif opt.fuse:  # report fused model summary
-        model.fuse()
-        y = model(im)
+        # print model
+        if opt.detail:
+            LOGGER.info(model)
+        
+        # profile layer by layer
+        if opt.line_profile:  
+            _ = model(im, profile=True)
 
-        for y_ in y:
-            print(y_.shape)
+        # profile forward-backward
+        if opt.profile:  
+            results = profile(input=im, ops=[model], n=50)
 
+        # output shape
+        if opt.output:
+            y = model(im)
+            for y_ in y:
+                LOGGER.info(f"Output Shape: {y_.shape}")
+
+    # playground
     elif opt.check:
-        repconv = RepConv(3, 256, 3, 2)
-        # conv = Conv(3, 126, 3, 2, act=nn.LeakyReLU())
+
+        # fused RepConv
+        repconv = RepConv(3, 128, 3, 2)
+        repconv.fuse_repconv()
+
+        # fused Conv
+        conv = Conv(3, 128, 3, 2)
+        conv.conv = fuse_conv_and_bn(conv.conv, conv.bn)  # update conv
+        delattr(conv, 'bn')  # remove batchnorm
+        conv.forward = conv.forward_fuse
+
         # rep = RepVGGBlock(3, 128, 3, 2)
-        # c3x = C3x(3, 12)
+        # c3x = C3x(3, 128)
+        # c3xese = C3xESE(3, 128, ese=False)
+        # ese = ESE(3)
+
         x = torch.rand(opt.batch_size, 3, 640, 640).to(device)
-        _ = profile(input=x, ops=[repconv], n=90)
-        # print(rep)
-        print(repconv)
+        _ = profile(input=x, ops=[repconv, conv], n=100, device=device)
+
+
+
+
+
+    # # test all models
+    # elif opt.test:  
+    #     for cfg in Path(ROOT / 'models').rglob('yolo*.yaml'):
+    #         try:
+    #             _ = Model(cfg)
+    #         except Exception as e:
+    #             print(f'Error in {cfg}: {e}')
+
+    else:
+        LOGGER.info(f"{colorstr('No cfg...')}")
 
 
 
