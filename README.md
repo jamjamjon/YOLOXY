@@ -24,7 +24,7 @@ To be continued...
 |x-s-relu 				|640 |x    |9.0  |26.4 |9.2
 |x-s-silu-v6-style 		|640 |x    |9.0  |26.4 |11.0
 |x-s-relu-v6-style 		|640 |x    |9.7  |28.6 |9.9
-|x-s-cross-conv-head 	|640 |x    |  |	| 
+|x-s-cross-not-half-head 	|640 |ing    |7.9  |17.0	|9.6 
 
 
 **yolov6 style: in one word, based on yolov5n, then doubled num of bottleneck block in backbone, they compare this model which has much bigger Params and GFLOPS to yolov5n, then comes the higher mAP results. As for inference speed, replacing all SiLU() with ReLU(). That's funny.**
