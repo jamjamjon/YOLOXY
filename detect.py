@@ -188,7 +188,15 @@ def run(
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     if update:
-        strip_optimizer(weights)  # update model (to fix SourceChangeWarning)
+        if len(weights) >= 1:
+            for w in weights:
+                if Path(w).exists():
+                    strip_optimizer(w)  # update model (to fix SourceChangeWarning)
+                else:
+                    LOGGER.error(f"Weights not exists when strip: {w}")
+        else:
+            LOGGER.error(f"No weights to strip!")
+
 
 
 def parse_opt():
