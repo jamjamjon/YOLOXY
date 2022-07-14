@@ -17,13 +17,13 @@ To be continued...
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
 |---|---|---|---|---|---
 |yolov5s-silu(v6.0) 	|640 |37.4 |**7.23** |**16.53** |**7.7** 
-|yolov5s-relu(v6.0) 	|640 | x   |**7.23** |**16.53** |**6.7**
-|x-s-half-head-silu 	|640 |x    |7.8  |17.6 |8.7
-|x-s-half-head-relu 	|640 |x    |7.8  |17.6 |8.0
-|x-s-silu 				|640 |x    |9.0  |26.4 |9.8
-|x-s-relu 				|640 |x    |9.0  |26.4 |9.2
-|x-s-silu-v6-style 		|640 |x    |9.0  |26.4 |11.0
-|x-s-relu-v6-style 		|640 |x    |9.7  |28.6 |9.9
+|yolov5s-relu(v6.0) 	|640 | -   |**7.23** |**16.53** |**6.7**
+|x-s-half-head-silu 	|640 |-    |7.8  |17.6 |8.7
+|x-s-half-head-relu 	|640 |-    |7.8  |17.6 |8.0
+|x-s-silu 				|640 |-    |9.0  |26.4 |9.8
+|x-s-relu 				|640 |-    |9.0  |26.4 |9.2
+|x-s-silu-v6-style 		|640 |-    |9.0  |26.4 |11.0
+|x-s-relu-v6-style 		|640 |-    |9.7  |28.6 |9.9
 |x-s-cross-not-half-head 	|640 |ing    |7.9  |17.0	|9.6 
 
 
