@@ -22,9 +22,7 @@ class ComputeLoss:
 
     # Compute losses
     def __init__(self, model, autobalance=False):
-
-        CONSOLE.print(f"[bold green]ComputeLoss:[/bold green] YOLOV5")
-
+        LOGGER.info(f"{colorstr('ComputeLoss: ')} YOLOV5")
 
         device = next(model.parameters()).device  # get model device
         h = model.hyp  # hyperparameters

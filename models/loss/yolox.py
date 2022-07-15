@@ -13,14 +13,14 @@ import math
 
 from utils.torch_utils import de_parallel
 from utils.metrics import bbox_iou, pairwise_bbox_iou
-from utils.general import CONSOLE, LOGGER
+from utils.general import CONSOLE, LOGGER, colorstr
 
 class ComputeLoss:
     '''
     This func contains SimOTA and siou loss.
     '''
     def __init__(self, model):
-        CONSOLE.print(f"[bold green]ComputeLoss:[/bold green] SimOTA")
+        LOGGER.info(f"{colorstr('ComputeLoss: ')} SimOTA")
 
         self.device = next(model.parameters()).device  # get model device
         self.hyp = model.hyp  # hyperparameters
