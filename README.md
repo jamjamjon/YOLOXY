@@ -36,8 +36,8 @@ To be continued...
 |---|---|---|---|---|---
 |yolov5s-silu(v6.0) 				|640 |37.4 |**7.23** |**16.53** |**7.7**  
 |x-s-cross-not-half-head-RepConv 	|640 |ing    |7.9  |17.0	|9.6
-|x-s-cross-not-half-head-AsymConv 	|640 |TODO    |7.9  |17.0	|9.6
-|x-s-cross-not-half-head-Conv 		|640 |TODO    |7.9  |17.0	|9.6
+|x-s-cross-not-half-head-AsymConv 	|640 |TODO(hard train)    |7.9  |17.0	|9.6
+|x-s-cross-not-half-head-Conv 		|640 |ing    |7.9  |17.0	|9.6
 |Combinations ... 
 
 
