@@ -225,6 +225,11 @@ class Model(nn.Module):
             # RepConv
             if isinstance(m, RepConv):
                 m.fuse_repconv()
+            # AsymConv
+            if isinstance(m, AsymConv):
+                m.fuse_asymconv()
+
+
 
 
         self.info()
@@ -282,7 +287,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in (Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
                  BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x,
-                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE,   # update
+                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv   # update
                  ):
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output

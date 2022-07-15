@@ -31,6 +31,32 @@ To be continued...
 **yolov6 style: in one word, based on yolov5n, then doubled num of bottleneck block in backbone, they compare this model which has much bigger Params and GFLOPS to yolov5n, then comes the higher mAP results. As for inference speed, replacing all SiLU() with ReLU(). That's funny.**
 
 
+
+### 1. Ablation study: Conv, AsymConv, RepConv
+|Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
+|---|---|---|---|---|---
+|yolov5s-silu(v6.0) 				|640 |37.4 |**7.23** |**16.53** |**7.7**  
+|x-s-cross-not-half-head-RepConv 	|640 |ing    |7.9  |17.0	|9.6
+|x-s-cross-not-half-head-AsymConv 	|640 |TODO    |7.9  |17.0	|9.6
+|x-s-cross-not-half-head-Conv 		|640 |TODO    |7.9  |17.0	|9.6
+|Combinations ... 
+
+
+
+### 2. Ablation study: head, half-head
+|Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
+|---|---|---|---|---|---
+|yolov5s-silu(v6.0) 				|640 |37.4 |**7.23** |**16.53** |**7.7**  
+|x-s-cross-not-half-head-RepConv 	|640 |ing    |7.9  |17.0	|9.6 
+|x-s-cross-half-head 				|640 |TODO    |7.4  |14.8	|8.9 
+
+
+### 3. Ablation study: Conv in head: (Conv, AsymConv, RepConv)
+|Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
+|---|---|---|---|---|---
+
+
+
 ...
 
 ### TODO List
@@ -43,11 +69,12 @@ To be continued...
 	[x] close mosaic in the last 5% epochs
 	[x] hyps config
 
-	[] Is RepConv() must be better mAP than Conv() ??  Fused RepConv() infer speed is same as fused Conv()
+	[ing] RepConv() , Conv(), AsymConv()
 	
 	[] Mac calculations in model_info()
 	[] export rknn
 	
+	[] ObjectBox
 	[] ATSS 
 	[] Task-Align-Learning, TOOD
 	[] end to end => NMS
