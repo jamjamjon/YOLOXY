@@ -62,6 +62,8 @@ To be continued...
 	[x] hyps config
 
 	[ing] RepConv() , Conv(), AsymConv()
+	[] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
+	[] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 	
 	[] Mac calculations in model_info()
