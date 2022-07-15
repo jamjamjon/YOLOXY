@@ -62,6 +62,7 @@ To be continued...
 	[x] hyps config
 
 	[ing] RepConv() , Conv(), AsymConv()
+	[] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 	
 	[] Mac calculations in model_info()
 	[] export rknn
