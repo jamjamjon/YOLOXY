@@ -1,4 +1,4 @@
-# YOLOX-BETA: support YOLOv5 & YOLOX both
+# YOLOX-BETA
 To be continued...
 
 
