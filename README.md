@@ -12,8 +12,7 @@ To be continued...
 **It seems like half-size-decoupled head won't hurt model bad.**
 
 
-### v1.0 Ablation study
-**Model size: xs & xn**
+## v1.0 Ablation study
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
 |---|---|---|---|---|---
 |yolov5s-silu(v6.0) 	|640 |37.4 |**7.23** |**16.53** |**7.7** 
