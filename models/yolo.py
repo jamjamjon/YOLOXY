@@ -387,25 +387,28 @@ if __name__ == '__main__':
                 LOGGER.info(f"Output Shape: {y_.shape}")
 
     # playground
-    elif opt.check:
+    if opt.check:
 
-        # fused RepConv
-        repconv = RepConv(3, 128, 3, 2)
-        repconv.fuse_repconv()
+        # # fused RepConv
+        # repconv = RepConv(3, 128, 3, 2)
+        # repconv.fuse_repconv()
 
-        # fused Conv
-        conv = Conv(3, 128, 3, 2)
-        conv.conv = fuse_conv_and_bn(conv.conv, conv.bn)  # update conv
-        delattr(conv, 'bn')  # remove batchnorm
-        conv.forward = conv.forward_fuse
+        # # fused Conv
+        # conv = Conv(3, 128, 3, 2)
+        # conv.conv = fuse_conv_and_bn(conv.conv, conv.bn)  # update conv
+        # delattr(conv, 'bn')  # remove batchnorm
+        # conv.forward = conv.forward_fuse
 
         # rep = RepVGGBlock(3, 128, 3, 2)
         # c3x = C3x(3, 128)
         # c3xese = C3xESE(3, 128, ese=False)
         # ese = ESE(3)
 
-        x = torch.rand(opt.batch_size, 3, 640, 640).to(device)
-        _ = profile(input=x, ops=[repconv, conv], n=100, device=device)
+        # c3tr = C3TR(3, 32)
+
+
+        x = torch.rand(opt.batch_size, 3, 32, 32).to(device)
+        _ = profile(input=x, ops=[c3tr], n=1, device=device)
 
 
 

@@ -207,9 +207,11 @@ class AsymConv(nn.Module):
         asym_w = asym_kernel.size(3)
         square_h = square_kernel.size(2)
         square_w = square_kernel.size(3)
-        square_kernel[:, :, 
-                    square_h // 2 - asym_h // 2: square_h // 2 - asym_h // 2 + asym_h,
-                    square_w // 2 - asym_w // 2: square_w // 2 - asym_w // 2 + asym_w] += asym_kernel
+        square_kernel[:, 
+                      :, 
+                      square_h // 2 - asym_h // 2: square_h // 2 - asym_h // 2 + asym_h,
+                      square_w // 2 - asym_w // 2: square_w // 2 - asym_w // 2 + asym_w
+                     ] += asym_kernel
 
 
 
@@ -343,8 +345,8 @@ class Decouple(nn.Module):
         # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
 
         self.a = Conv(c1, c_, 1)        # stem
-        
-        # self.bc = Conv(c_, c_, 3)     # fused b,c brach
+         
+        # self.bc = Conv(c_, c_, 3)     # fused b,c brach 
         # => params(1690815 -> 1626751) GFLOPs(4.5 -> 4.2) when c_ = min(c1 // 2, 256)
         # => params(2334367 -> 2077215) GFLOPs(7.9 -> 6.5) when c_ = min(c1, 256);
         self.bc = CrossConv(c_, c_, 3, 1)
