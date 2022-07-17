@@ -49,7 +49,7 @@ except ImportError:
 
 class Model(nn.Module):
     # YOLOv5 model
-    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes
+    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None, nk=None):  # model, input channels, number of classes
         super().__init__()
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
@@ -67,6 +67,13 @@ class Model(nn.Module):
         if anchors:
             CONSOLE.print(f'Overriding model.yaml anchors with anchors={anchors}')
             self.yaml['anchors'] = round(anchors)  # override yaml value
+
+        # num of keypoints
+        if nk and nk != self.yaml['nk']:
+            CONSOLE.print(f"Overriding model.yaml nk={self.yaml['nk']} with nk={nk}")
+            self.yaml['nk'] = nk  # override yaml value
+            
+
         self.tag = self.yaml.get('tag', 'YOLOV5')   # model tag
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
@@ -251,7 +258,6 @@ class Model(nn.Module):
 
 
 def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
-    # LOGGER.info(f"\n{'':>3}{'from':>18}{'n':>3}{'params':>10}  {'module':<40}{'arguments':<30}")
     # CONSOLE.log(log_locals=True)      # local variables
     model_table = Table(highlight=False, box=rich.box.ROUNDED)
     model_attrs = {
@@ -264,9 +270,10 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
     }
     for k, v in model_attrs.items():
         model_table.add_column(f"{k}", justify=v, style="", no_wrap=True)
-    anchors, nc, gd, gw = d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple']
+    anchors, nc, nk, gd, gw = d['anchors'], d['nc'], d.get('nk', 0), d['depth_multiple'], d['width_multiple']
     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
-    no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
+    # no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
+    no = na * (nc + 5 + nk * 2)   # number of outputs = anchors * (classes + 5 + 2 * keypoints)
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
 
     # model structure
@@ -385,6 +392,10 @@ if __name__ == '__main__':
             y = model(im)
             for y_ in y:
                 LOGGER.info(f"Output Shape: {y_.shape}")
+    else:
+        LOGGER.info(f"{colorstr('No cfg...')}")
+
+
 
     # playground
     if opt.check:
@@ -422,8 +433,7 @@ if __name__ == '__main__':
     #         except Exception as e:
     #             print(f'Error in {cfg}: {e}')
 
-    else:
-        LOGGER.info(f"{colorstr('No cfg...')}")
+
 
 
 

@@ -336,10 +336,11 @@ class Concat(nn.Module):
 
 class Decouple(nn.Module):
     # Decoupled head
-    def __init__(self, c1, nc=80, na=3):  # ch_in, num_classes, num_anchors
+    def __init__(self, c1, nc=80, na=3, nk=0):  # ch_in, num_classes, num_anchors
         super().__init__()
         self.na = na  # number of anchors
         self.nc = nc  # number of classes
+        self.nk = nk  # number of keypoints   
 
         c_ = min(c1, 256)  # min(c1, nc * na)
         # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
@@ -478,7 +479,7 @@ class Detect(nn.Module):
     def __init__(self, nc=80, anchors=(), ch=(), inplace=True):  # detection layer
         super().__init__()
         self.nc = nc  # number of classes
-        self.no = nc + 5  # number of outputs per anchor
+        self.no = nc + 5 # number of outputs per anchor
         self.nl = len(anchors)  # number of detection layers
         self.na = len(anchors[0]) // 2  # number of anchors
         self.grid = [torch.zeros(1)] * self.nl  # init grid
@@ -531,28 +532,46 @@ class DetectX(nn.Module):
     stride = None  # strides computed during build
     export = False  # export mode
 
-    def __init__(self, nc=80, anchors=1, ch=(), inplace=True):  # detection layer
+    def __init__(self, nc=80, nk=None, anchors=1, ch=(), inplace=True):  # detection layer
         super().__init__()
+        # CONSOLE.log(log_locals=True)      # local variables
+
+        self.nc = nc        # number of classes
+        self.nk = nk        # number of keypoints
+        self.nb = nc + 5    # number of detection box
         
-        self.nc = nc  # number of classes
-        self.no = nc + 5  # number of outputs per anchor
+        # self.no = nc + 5  # number of outputs per anchor
+        self.no = self.nb + 3 * self.nk if self.nk != 0 else self.nb    # number of outputs per anchor
+
         self.nl = len(ch)  # number of detection layers, => 3
         self.na = self.anchors = anchors
         self.grid = [torch.zeros(1)] * self.nl    # TODO: init grid 用于保存每层的每个网格的坐标
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
-        # Head
-        # self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)    # couple head
-        self.m = nn.ModuleList(Decouple(x, self.nc, self.na) for x in ch)           # decouple head
+        # Head for detection
+        # self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)            # couple head
+        self.m = nn.ModuleList(Decouple(x, self.nc, self.na, self.nk) for x in ch)          # decouple head
+
+        # TODO: head for keypoints
+        if self.nk is not None:
+            self.m_kpt = nn.ModuleList(nn.Conv2d(x, self.nk * 3 * self.na, 1) for x in ch)
 
 
     def forward(self, x):
         z = []  # inference output
 
         for i in range(self.nl):
-            x[i] = self.m[i](x[i])
+
+            # bbox & cls head
+            if self.nk is None or self.nk == 0:
+                x[i] = self.m[i](x[i])
+            else:   # keypoints head
+                x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
+
+            # reshape tensor
             bs, _, ny, nx = x[i].shape
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()   # torch.Size([1, 1, 80, 80, 85])
+
 
             if not self.training:
                 # make grid

@@ -1,7 +1,8 @@
 
 # update
-tag: 'YOLOX'   # 'YOLOV5' default
-nkpt: 17  # not used right now
+tag: 'YOLOX'    # 'YOLOV5' default
+# nk: 17        # num of keypoints
+
 
 # Parameters
 nc: 80  # number of classes
@@ -59,5 +60,5 @@ neck:
 
 head:
   [
-   [[17, 20, 23], 1, DetectX, [nc, anchors]],  # Detect(P3, P4, P5)
+   [[17, 20, 23], 1, DetectX, [nc, nk, anchors]],  # Detect(P3, P4, P5)
   ]

@@ -66,6 +66,7 @@ To be continued...
 	[] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 	
+	[] pose-estimation  
 	[] Mac calculations in model_info()
 	[] export rknn
 	
@@ -76,6 +77,5 @@ To be continued...
 	
 	[] OOB
 	[] tracking
-	[] pose-estimation
 	[] segmentation
 
