@@ -70,13 +70,10 @@ To be continued...
 	[] pose-estimation  
 	
 	[] Mac calculations in model_info()
-	[] export rknn
+	[] rknn export parts when backbone fixed
 	
 	[] ObjectBox
-	[] ATSS 
-	[] Task-Align-Learning, TOOD
+	[] ATSS +  TOOD
 	[] end to end => NMS
-	
-	[] OOB
 	[] segmentation
 
