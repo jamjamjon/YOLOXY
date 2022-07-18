@@ -49,7 +49,7 @@ except ImportError:
 
 class Model(nn.Module):
     # YOLOv5 model
-    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None, nk=None):  # model, input channels, number of classes
+    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None, nk=None):
         super().__init__()
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
@@ -61,19 +61,24 @@ class Model(nn.Module):
 
         # Define model
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
+        self.tag = self.yaml.get('tag', 'YOLOV5')   # model tag   TODO: removed
+
+        # num of classes
         if nc and nc != self.yaml['nc']:
-            CONSOLE.print(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
+            LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
+
+        # anchors
         if anchors:
-            CONSOLE.print(f'Overriding model.yaml anchors with anchors={anchors}')
+            LOGGER.info(f'Overriding model.yaml anchors with anchors={anchors}')
             self.yaml['anchors'] = round(anchors)  # override yaml value
 
         # num of keypoints
-        if nk and nk != self.yaml['nk']:
-            CONSOLE.print(f"Overriding model.yaml nk={self.yaml['nk']} with nk={nk}")
-            self.yaml['nk'] = nk  # override yaml value
+        if nk and nk != self.yaml.get('nk', 0):
+            LOGGER.info(f"Overriding model.yaml nk={self.yaml.get('nk', 0)} with nk={nk}")
+            self.yaml.update({'nk': nk})  # override yaml value
 
-        self.tag = self.yaml.get('tag', 'YOLOV5')   # model tag
+        # parse model
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
         self.inplace = self.yaml.get('inplace', True)
@@ -258,6 +263,8 @@ class Model(nn.Module):
 
 def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
     # CONSOLE.log(log_locals=True)      # local variables
+
+    # rich table
     model_table = Table(highlight=False, box=rich.box.ROUNDED)
     model_attrs = {
         "IDX": "right",
@@ -269,9 +276,10 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
     }
     for k, v in model_attrs.items():
         model_table.add_column(f"{k}", justify=v, style="", no_wrap=True)
+
+    # params
     anchors, nc, nk, gd, gw = d['anchors'], d['nc'], d.get('nk', 0), d['depth_multiple'], d['width_multiple']
     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
-    # no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
     no = na * (nc + 5 + nk * 2)   # number of outputs = anchors * (classes + 5 + 2 * keypoints)
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
 

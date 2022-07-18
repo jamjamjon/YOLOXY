@@ -307,6 +307,7 @@ class Ensemble(nn.ModuleList):
         return y, None  # inference, train output
 
 
+# TODO: remove Detect
 def attempt_load(weights, device=None, inplace=True, fuse=True):
     # Loads an ensemble of models weights=[a,b,c] or a single model weights=[a] or weights=a
     from models.yolo import Detect, Model
@@ -334,7 +335,7 @@ def attempt_load(weights, device=None, inplace=True, fuse=True):
     if len(model) == 1:
         return model[-1]  # return model
     print(f'Ensemble created with {weights}\n')
-    for k in 'names', 'nc', 'yaml':
+    for k in 'names', 'nc', 'yaml':         # TODO: add nk
         setattr(model, k, getattr(model[0], k))
     model.stride = model[torch.argmax(torch.tensor([m.stride.max() for m in model])).int()].stride  # max stride
     assert all(model[0].nc == m.nc for m in model), f'Models have different class counts: {[m.nc for m in model]}'

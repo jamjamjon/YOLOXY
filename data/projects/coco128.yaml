@@ -1,8 +1,5 @@
-# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
-# COCO128 dataset https://www.kaggle.com/ultralytics/coco128 (first 128 images from COCO train2017) by Ultralytics
-# Example usage: python train.py --data coco128.yaml
 # parent
-# ├── yolov5
+# ├── YOLOX-BETA
 # └── datasets
 #     └── coco128  ← downloads here (7 MB)
 
@@ -13,9 +10,11 @@ train: images/train2017  # train images (relative to 'path') 128 images
 val: images/train2017  # val images (relative to 'path') 128 images
 test:  # test images (optional)
 
-# Classes
+
+# Classes & Keypoints
+# nk: 0   # number of keypoints (optional when do keypoints detection; 0 => bbox detection)
 nc: 80  # number of classes
-names: ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
+names: ['person','bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
         'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
         'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
         'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',

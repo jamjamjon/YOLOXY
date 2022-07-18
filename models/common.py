@@ -528,21 +528,18 @@ class Detect(nn.Module):
 
 
 class DetectX(nn.Module):
-    # Anchor free Detect()
+    # Anchor free Detect Layer
     stride = None  # strides computed during build
     export = False  # export mode
 
-    def __init__(self, nc=80, nk=None, anchors=1, ch=(), inplace=True):  # detection layer
+    def __init__(self, nc=80, nk=0, anchors=1, ch=(), inplace=True):  # detection layer
         super().__init__()
         # CONSOLE.log(log_locals=True)      # local variables
 
         self.nc = nc        # number of classes
         self.nk = nk        # number of keypoints
         self.nb = nc + 5    # number of detection box
-        
-        # self.no = nc + 5  # number of outputs per anchor
-        self.no = self.nb + 3 * self.nk if self.nk != 0 else self.nb    # number of outputs per anchor
-
+        self.no = self.nb + 3 * self.nk    # number of outputs per anchor,  keypoint: (xi, yi, i_conf)
         self.nl = len(ch)  # number of detection layers, => 3
         self.na = self.anchors = anchors
         self.grid = [torch.zeros(1)] * self.nl    # TODO: init grid 用于保存每层的每个网格的坐标
@@ -553,7 +550,9 @@ class DetectX(nn.Module):
         self.m = nn.ModuleList(Decouple(x, self.nc, self.na, self.nk) for x in ch)          # decouple head
 
         # TODO: head for keypoints
-        if self.nk is not None and self.nk != 0:
+        # self.task = 'kpts' if self.nk > 0 else 'det'   
+        if self.nk > 0:
+            LOGGER.info(f"{colorstr(f'Task with keypoints.')} Num_keypoints: {self.nk}")
             self.m_kpt = nn.ModuleList(nn.Conv2d(x, self.nk * 3 * self.na, 1) for x in ch)
 
 
@@ -561,24 +560,33 @@ class DetectX(nn.Module):
         z = []  # inference output
 
         for i in range(self.nl):
-            x[i] = self.m[i](x[i])
+            # x[i] = self.m[i](x[i])
 
-            # # bbox & cls head
-            # if self.nk is None or self.nk == 0:
-            #     x[i] = self.m[i](x[i])
-            # else:   # keypoints head
-            #     x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
+            # bbox & cls head
+            if self.nk <= 0:
+                x[i] = self.m[i](x[i])
+            else:   # keypoints head
+                x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
 
             # reshape tensor
             bs, _, ny, nx = x[i].shape
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()   # torch.Size([1, 1, 80, 80, 85])
 
-
             if not self.training:
                 # make grid
                 if self.grid[i].shape[2:4] != x[i].shape[2:4]:
                     d = self.stride.device
-                    yv, xv = torch.meshgrid([torch.arange(ny).to(d), torch.arange(nx).to(d)])
+                    # d = self.anchors[i].device
+
+                    # TODO: check
+                    # if check_version(torch.__version__, '1.10.0'):  # torch>=1.10.0 meshgrid workaround for torch>=0.7 compatibility
+                    #     # yv, xv = torch.meshgrid(torch.arange(ny).to(d), torch.arange(nx).to(d), indexing='ij')
+                    #     yv, xv = torch.meshgrid(torch.arange(ny, device=d), torch.arange(nx, device=d), indexing='ij')
+                    # else:
+                    #     # yv, xv = torch.meshgrid(torch.arange(ny).to(d), torch.arange(nx).to(d))
+                    #     yv, xv = torch.meshgrid(torch.arange(ny, device=d), torch.arange(nx, device=d))
+
+                    yv, xv = torch.meshgrid([torch.arange(ny).to(d), torch.arange(nx).to(d)])  # old version
                     self.grid[i] = torch.stack((xv, yv), 2).view(1, self.na, ny, nx, 2).float()
 
                 y = x[i]

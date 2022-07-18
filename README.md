@@ -67,7 +67,7 @@ To be continued...
 	[] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 	
-	[] pose-estimation  
+	[] pose-estimation  =>  add task tag 
 	
 	[] Mac calculations in model_info()
 	[] rknn export parts when backbone fixed

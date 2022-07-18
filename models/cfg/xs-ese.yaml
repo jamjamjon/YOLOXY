@@ -1,17 +1,16 @@
 
-# update
-tag: 'YOLOX'   # 'YOLOV5' default
-# nk: 17        # num of keypoints
-
+tag: 'YOLOX'   # 'YOLOV5' default  TODO: removed!
 
 # Parameters
-nc: 80  # number of classes
 depth_multiple: 0.33  # model depth multiple
 width_multiple: 0.50  # layer channel multiple
+nc: 80  # number of classes, required
 anchors: 1
+# nk: 0   # num of keypoints, (not required, specify in data/project/xxx.yaml)
 
 
-# [from, number, module, args]
+
+# Structure => [from, number, module, args]
 backbone:
   [[-1, 1, RepConv, [64, 3, 2]],    # 0-P1/2
    [-1, 1, RepConv, [128, 3, 2]],   # 1-P2/4
