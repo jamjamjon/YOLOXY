@@ -62,6 +62,8 @@ To be continued...
 	[x] hyps config
 	[x] byte_tracker 
 
+	[] remove yolov5 parts
+
 	[ing] RepConv() , Conv(), AsymConv()
 	[] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
 	[] DBBConv(), Inception_like_conv(), Xception_like_conv() 
