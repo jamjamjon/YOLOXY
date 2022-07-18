@@ -553,7 +553,7 @@ class DetectX(nn.Module):
         self.m = nn.ModuleList(Decouple(x, self.nc, self.na, self.nk) for x in ch)          # decouple head
 
         # TODO: head for keypoints
-        if self.nk is not None:
+        if self.nk is not None and self.nk != 0:
             self.m_kpt = nn.ModuleList(nn.Conv2d(x, self.nk * 3 * self.na, 1) for x in ch)
 
 
