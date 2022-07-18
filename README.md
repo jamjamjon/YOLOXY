@@ -63,6 +63,7 @@ To be continued...
 	[x] byte_tracker 
 
 	[] remove yolov5 parts
+	[] optimizer put into models/
 
 	[ing] RepConv() , Conv(), AsymConv()
 	[] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
