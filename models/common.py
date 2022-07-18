@@ -561,12 +561,13 @@ class DetectX(nn.Module):
         z = []  # inference output
 
         for i in range(self.nl):
+            x[i] = self.m[i](x[i])
 
-            # bbox & cls head
-            if self.nk is None or self.nk == 0:
-                x[i] = self.m[i](x[i])
-            else:   # keypoints head
-                x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
+            # # bbox & cls head
+            # if self.nk is None or self.nk == 0:
+            #     x[i] = self.m[i](x[i])
+            # else:   # keypoints head
+            #     x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
 
             # reshape tensor
             bs, _, ny, nx = x[i].shape

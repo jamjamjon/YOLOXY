@@ -72,7 +72,6 @@ class Model(nn.Module):
         if nk and nk != self.yaml['nk']:
             CONSOLE.print(f"Overriding model.yaml nk={self.yaml['nk']} with nk={nk}")
             self.yaml['nk'] = nk  # override yaml value
-            
 
         self.tag = self.yaml.get('tag', 'YOLOV5')   # model tag
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist

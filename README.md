@@ -60,6 +60,7 @@ To be continued...
 	[x] siou
 	[x] close mosaic in the last 5% epochs
 	[x] hyps config
+	[x] byte_tracker 
 
 	[ing] RepConv() , Conv(), AsymConv()
 	[] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
@@ -67,6 +68,7 @@ To be continued...
 	[] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 	
 	[] pose-estimation  
+	
 	[] Mac calculations in model_info()
 	[] export rknn
 	
@@ -76,6 +78,5 @@ To be continued...
 	[] end to end => NMS
 	
 	[] OOB
-	[] tracking
 	[] segmentation
 
