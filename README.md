@@ -39,7 +39,8 @@ To be continued...
 |x-s-cross-not-half-head-AsymConv 	|640 |TODO(hard train)    |7.9  |17.0	|9.6
 |x-s-cross-not-half-head-Conv 		|640 |ing    |7.9  |17.0	|9.6
 |Combinations ... 
-
+	
+(=> head: CrossConv)
 
 ### Exp2: Conv in head: (Conv, AsymConv, RepConv)
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
