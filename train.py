@@ -110,9 +110,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
         csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(csd, strict=False)  # load
-        # LOGGER.info(f'> Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
+        LOGGER.info(f"{colorstr('Transfer Learning: ')}{len(csd)}/{len(model.state_dict())} items from {weights}")  # report
     else:
         model = Model(cfg, ch=3, nc=nc, nk=nk).to(device)  # create
+        LOGGER.info(f"{colorstr('Train From Scratch.')}")  # report
 
 
     # check AMP
@@ -192,17 +193,14 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         if resume:
             assert start_epoch > 0, f'{weights} training to {epochs} epochs is finished, nothing to resume.'
         if epochs < start_epoch:
-            # LOGGER.info(f"{weights} has been trained for {ckpt['epoch']} epochs. Fine-tuning for {epochs} more epochs.")
-            CONSOLE.print(f"{weights} has been trained for {ckpt['epoch']} epochs. Fine-tuning for {epochs} more epochs.")
+            LOGGER.info(f"{weights} has been trained for {ckpt['epoch']} epochs. Fine-tuning for {epochs} more epochs.")
             epochs += ckpt['epoch']  # finetune additional epochs
 
         del ckpt, csd
 
     # DP mode
     if cuda and RANK == -1 and torch.cuda.device_count() > 1:
-        # LOGGER.warning('WARNING: DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.\n'
-        #                'See Multi-GPU Tutorial at https://github.com/ultralytics/yolov5/issues/475 to get started.')
-        CONSOLE.print('[bold red]WARNING: DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.\n'
+        LOGGER.warning('WARNING: DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.\n'
                        'See Multi-GPU Tutorial at https://github.com/ultralytics/yolov5/issues/475 to get started.')
         model = torch.nn.DataParallel(model)
 
@@ -286,18 +284,14 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     stopper, stop = EarlyStopping(patience=opt.patience), False
 
 
-    # init compute_loss class
-    # if model.tag.upper() == 'YOLOX':
-    #     from models.loss.yolox import ComputeLoss
-    # elif model.tag.upper() == 'YOLOV5':
-    #     from models.loss.yolov5 import ComputeLoss
+    # compute_loss 
     from models.loss.simota import ComputeLoss
     compute_loss = ComputeLoss(model)  
 
 
     callbacks.run('on_train_start')     # before train
-    CONSOLE.print(f"[b green]Training settings: [b u blue]{save_dir}[/b u blue]\n"
-                    f"[b green]Training epochs: [b cyan]{epochs}")
+    LOGGER.info(f"{colorstr('Training settings: ')}{save_dir}\n"
+                    f"{colorstr('Training epochs: ')}{epochs}")
 
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         callbacks.run('on_train_epoch_start')
@@ -497,7 +491,7 @@ def parse_opt(known=False):
     parser.add_argument('--noval', action='store_true', help='only validate final epoch')
     # parser.add_argument('--noautoanchor', action='store_true', help='disable AutoAnchor')
     parser.add_argument('--noplots', action='store_true', help='save no plot files')
-    parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
+    # parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--cache', type=str, nargs='?', const='ram', help='--cache images in "ram" (default) or "disk"')
     parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -531,7 +525,6 @@ def main(opt, callbacks=Callbacks()):
     # Checks
     if RANK in {-1, 0}:
         print_args(vars(opt))
-        # check_git_status()
         check_requirements(exclude=['thop'])
 
     # Resume

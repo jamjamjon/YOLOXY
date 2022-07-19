@@ -551,11 +551,11 @@ def check_amp(model):
     im = f if f.exists() else 'https://ultralytics.com/images/bus.jpg' if check_online() else np.ones((640, 640, 3))
     try:
         assert amp_allclose(model, im) or amp_allclose(DetectMultiBackend('yolov5n.pt', device), im)
-        LOGGER.info(emojis(f'{prefix}checks passed ✅'))
+        LOGGER.info(emojis(f'{prefix} ✅'))
         return True
     except Exception:
         help_url = 'https://github.com/ultralytics/yolov5/issues/7908'
-        LOGGER.warning(emojis(f'{prefix}checks failed ❌, disabling Automatic Mixed Precision. See {help_url}'))
+        LOGGER.warning(emojis(f'{prefix} ❌, disabling Automatic Mixed Precision. See {help_url}'))
         return False
 
 
