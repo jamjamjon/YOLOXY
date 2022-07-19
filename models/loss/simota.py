@@ -119,7 +119,7 @@ class ComputeLoss:
         num_finalists = max(num_finalists, 1)
 
         # Compute loss
-        lbox += (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, SIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
+        lbox += (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, CIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
         lobj += (self.BCEobj(pobj.view(-1, 1), tobj * 1.0)).sum() / num_finalists
         lcls += (self.BCEcls(pcls.view(-1, self.nc)[finalists_masks], tcls)).sum() / num_finalists
         lbox_l1 += (self.L1box(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists

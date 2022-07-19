@@ -2,7 +2,7 @@
 YOLO-specific modules
 
 Usage:
-    $ python path/to/models/yolo.py --cfg yolov5s.yaml
+    $ python path/to/models/yolo.py --cfg xxx.yaml
 """
 
 import argparse
@@ -11,18 +11,7 @@ import platform
 import sys
 from copy import deepcopy
 from pathlib import Path
-
 import rich
-from rich.layout import Layout
-from rich.panel import Panel
-from rich.console import Group
-from rich.live import Live
-from rich.table import Table
-from rich import box
-from rich.align import Align
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
-from rich.syntax import Syntax
-from rich.text import Text
 
 
 FILE = Path(__file__).resolve()
@@ -34,7 +23,6 @@ if platform.system() != 'Windows':
 
 from models.common import *
 from models.experimental import *
-from utils.autoanchor import check_anchor_order
 from utils.general import check_version, check_yaml, make_divisible, print_args, LOGGER, CONSOLE
 from utils.plots import feature_visualization
 from utils.torch_utils import (fuse_conv_and_bn, initialize_weights, model_info, profile, scale_img, select_device,
@@ -46,11 +34,12 @@ except ImportError:
     thop = None
 
 
-
 class Model(nn.Module):
-    # YOLOv5 model
-    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None, nk=None):
+    # YOLO model
+    def __init__(self, cfg=None, ch=3, nc=None, nk=None): 
         super().__init__()
+
+        # read model.yaml
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
         else:  # is *.yaml
@@ -61,17 +50,16 @@ class Model(nn.Module):
 
         # Define model
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
-        self.tag = self.yaml.get('tag', 'YOLOV5')   # model tag   TODO: removed
 
         # num of classes
         if nc and nc != self.yaml['nc']:
             LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
 
-        # anchors
-        if anchors:
-            LOGGER.info(f'Overriding model.yaml anchors with anchors={anchors}')
-            self.yaml['anchors'] = round(anchors)  # override yaml value
+        # anchors (no need, always = 1)
+        # if anchors:
+        #     LOGGER.info(f'Overriding model.yaml anchors with anchors={anchors}')
+        #     self.yaml['anchors'] = round(anchors)  # override yaml value
 
         # num of keypoints
         if nk and nk != self.yaml.get('nk', 0):
@@ -85,17 +73,13 @@ class Model(nn.Module):
 
         # Build strides, anchors
         m = self.model[-1]  # Head 
-        if isinstance(m, (Detect, DetectX)):
+        if isinstance(m, (DetectX)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
             self.stride = m.stride
             self._initialize_biases()  # only run once
 
-            if isinstance(m, Detect):
-                check_anchor_order(m)  # must be in pixel-space (not grid-space)
-                m.anchors /= m.stride.view(-1, 1, 1)
-                
 
         # Init weights, biases
         initialize_weights(self)
@@ -163,7 +147,7 @@ class Model(nn.Module):
         return y
 
     def _profile_one_layer(self, m, x, dt):
-        c = isinstance(m, (Detect, DetectX))  # is final layer, copy input as inplace fix
+        c = isinstance(m, (DetectX))  # is final layer, copy input as inplace fix
         o = thop.profile(m, inputs=(x.copy() if c else x,), verbose=False)[0] / 1E9 * 2 if thop else 0  # FLOPs
         t = time_sync()
         for _ in range(10):
@@ -241,8 +225,6 @@ class Model(nn.Module):
                 m.fuse_asymconv()
 
 
-
-
         self.info()
         return self
 
@@ -253,11 +235,11 @@ class Model(nn.Module):
         # Apply to(), cpu(), cuda(), half() to model tensors that are not parameters or registered buffers
         self = super()._apply(fn)
         m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):
-            m.stride = fn(m.stride)
-            m.grid = list(map(fn, m.grid))
-            if isinstance(m.anchor_grid, list):
-                m.anchor_grid = list(map(fn, m.anchor_grid))
+        # if isinstance(m, Detect):
+        #     m.stride = fn(m.stride)
+        #     m.grid = list(map(fn, m.grid))
+        #     if isinstance(m.anchor_grid, list):
+        #         m.anchor_grid = list(map(fn, m.anchor_grid))
         return self
 
 
@@ -265,7 +247,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
     # CONSOLE.log(log_locals=True)      # local variables
 
     # rich table
-    model_table = Table(highlight=False, box=rich.box.ROUNDED)
+    model_table = rich.table.Table(highlight=False, box=rich.box.ROUNDED)
     model_attrs = {
         "IDX": "right",
         "FROM": "right",
@@ -278,8 +260,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         model_table.add_column(f"{k}", justify=v, style="", no_wrap=True)
 
     # params
-    anchors, nc, nk, gd, gw = d['anchors'], d['nc'], d.get('nk', 0), d['depth_multiple'], d['width_multiple']
-    na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
+    na, nc, nk, gd, gw = 1, d['nc'], d['nk'], d['depth_multiple'], d['width_multiple']
     no = na * (nc + 5 + nk * 2)   # number of outputs = anchors * (classes + 5 + 2 * keypoints)
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
 
@@ -315,12 +296,6 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
-
-        # Detect for yolov5
-        elif m is Detect:
-            args.append([ch[x] for x in f])
-            if isinstance(args[1], int):  # number of anchors
-                args[1] = [list(range(args[1] * 2))] * len(f)
 
         # Detect for yolox
         elif m is DetectX:

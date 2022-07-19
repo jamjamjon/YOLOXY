@@ -8,20 +8,20 @@ warmup_epochs: 3.0  # warmup epochs (fractions ok)
 warmup_momentum: 0.8  # warmup initial momentum
 warmup_bias_lr: 0.1  # warmup initial bias lr
 
-# yolov5
-box: 0.05  # box loss gain
-cls: 0.5  # cls loss gain
-cls_pw: 1.0  # cls BCELoss positive_weight
-obj: 1.0  # obj loss gain (scale with pixels) 
-obj_pw: 1.0  # obj BCELoss positive_weight
-iou_t: 0.20  # IoU training threshold
-anchor_t: 4.0  # anchor-multiple threshold
+# # yolov5
+# box: 0.05  # box loss gain
+# cls: 0.5  # cls loss gain
+# cls_pw: 1.0  # cls BCELoss positive_weight
+# obj: 1.0  # obj loss gain (scale with pixels) 
+# obj_pw: 1.0  # obj BCELoss positive_weight
+# iou_t: 0.20  # IoU training threshold
+# anchor_t: 4.0  # anchor-multiple threshold
 
-# yolox
-box_weight: 5.0
-iou_weight: 3.0
-cls_weight: 1.0
-center_radius: 2.5
+# # yolox
+# box_weight: 5.0     # not required unless adjust
+# iou_weight: 3.0     # not required unless adjust
+# cls_weight: 1.0     # not required unless adjust
+# center_radius: 2.5  # not required unless adjust
 
 # anchors: 3  # anchors per output layer (0 to ignore)
 fl_gamma: 0.0  # focal loss gamma (efficientDet default gamma=1.5)

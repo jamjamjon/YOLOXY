@@ -174,10 +174,11 @@ def run(
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
     # mloss setting
-    if model.tag in ('YOLOX', 'yolox'):
-        loss = torch.zeros(4, device=device)  # mean losses
-    elif model.tag in ('YOLOV5', 'yolov5'):
-        loss = torch.zeros(3, device=device)  # mean losses
+    loss = torch.zeros(4, device=device)  # mean losses
+    # if model.tag in ('YOLOX', 'yolox'):
+    #     loss = torch.zeros(4, device=device)  # mean losses
+    # elif model.tag in ('YOLOV5', 'yolov5'):
+    #     loss = torch.zeros(3, device=device)  # mean losses
 
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')

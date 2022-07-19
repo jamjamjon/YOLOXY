@@ -75,7 +75,6 @@ class Loggers():
             'x/lr1',
             'x/lr2']  # params
 
-
         self.best_keys = ['best/epoch', 'best/precision', 'best/recall', 'best/mAP_0.5', 'best/mAP_0.5:0.95']
         for k in LOGGERS:
             setattr(self, k, None)  # init empty logger dictionary
@@ -160,6 +159,7 @@ class Loggers():
     def on_fit_epoch_end(self, vals, epoch, best_fitness, fi):
         # Callback runs at the end of each fit (train+val) epoch
 
+        # TODO
         if len(vals) == len(self.keys_x):
             self.keys = self.keys_x
         # elif len(vals) == len(self.keys):

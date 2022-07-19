@@ -17,7 +17,6 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import yaml
-# from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import lr_scheduler
 from tqdm import tqdm
 
@@ -30,7 +29,6 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 import val  # for end-of-epoch mAP
 from models.experimental import attempt_load
 from models.yolo import Model
-from utils.autoanchor import check_anchors
 from utils.autobatch import check_train_batch_size
 from utils.callbacks import Callbacks
 from utils.dataloaders import create_dataloader
@@ -44,7 +42,7 @@ from utils.loggers.wandb.wandb_utils import check_wandb_resume
 from utils.metrics import fitness
 from utils.plots import plot_labels
 from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, torch_distributed_zero_first, 
-                                smart_optimizer, smart_DDP)
+                                smart_DDP)
 
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
@@ -107,16 +105,14 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         # with torch_distributed_zero_first(LOCAL_RANK):
         #     weights = attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
-        # model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors'), nk=nk).to(device)  # create
+        model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, nk=nk).to(device)  # create
         exclude = ['anchor'] if (cfg or hyp.get('anchors')) and not resume else []  # exclude keys
         csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
         csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(csd, strict=False)  # load
         # LOGGER.info(f'> Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
     else:
-        # model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors'), nk=nk).to(device)  # create
+        model = Model(cfg, ch=3, nc=nc, nk=nk).to(device)  # create
 
 
     # check AMP
@@ -145,7 +141,28 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     hyp['weight_decay'] *= batch_size * accumulate / nbs  # scale weight_decay
     # CONSOLE.print(f"Scaled weight_decay = {hyp['weight_decay']}")
 
-    optimizer = smart_optimizer(model, opt.optimizer, hyp['lr0'], hyp['momentum'], hyp['weight_decay'])
+    g = [], [], []  # optimizer parameter groups
+    bn = tuple(v for k, v in nn.__dict__.items() if 'Norm' in k)  # normalization layers, i.e. BatchNorm2d()
+    for v in model.modules():
+        if hasattr(v, 'bias') and isinstance(v.bias, nn.Parameter):  # bias
+            g[2].append(v.bias)
+        if isinstance(v, bn):  # weight (no decay)
+            g[1].append(v.weight)
+        elif hasattr(v, 'weight') and isinstance(v.weight, nn.Parameter):  # weight (with decay)
+            g[0].append(v.weight)
+
+    if opt.optimizer == 'Adam':
+        optimizer =  torch.optim.Adam(g[2], lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
+    elif opt.optimizer == 'AdamW':
+        optimizer =  torch.optim.AdamW(g[2], lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
+    else:
+        optimizer =  torch.optim.SGD(g[2], lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
+
+    optimizer.add_param_group({'params': g[0], 'weight_decay': hyp['weight_decay']})  # add g0 with weight_decay
+    optimizer.add_param_group({'params': g[1]})  # add g1 (BatchNorm2d weights)
+    # LOGGER.info(f"{colorstr('optimizer:')} {type(optimizer).__name__} with parameter groups "
+    #             f"{len(g[1])} weight (no decay), {len(g[0])} weight, {len(g[2])} bias")
+    del g
 
     # Scheduler
     if opt.cos_lr:
@@ -237,9 +254,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             if plots:
                 plot_labels(labels, names, save_dir)
 
-            # Anchors
-            if not opt.noautoanchor and model.tag in ('yolov5', 'YOLOV5'):
-                check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)
             model.half().float()  # pre-reduce anchor precision
 
         callbacks.run('on_pretrain_routine_end')
@@ -247,17 +261,14 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # DDP mode
     if cuda and RANK != -1:
         model = smart_DDP(model)
-        # if check_version(torch.__version__, '1.11.0'):
-        #     model = DDP(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK, static_graph=True)
-        # else:
-        #     model = DDP(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
 
     # Model attributes
-    nl = de_parallel(model).model[-1].nl  # number of detection layers (to scale hyps)
-    hyp['box'] *= 3 / nl  # scale to layers
-    hyp['cls'] *= nc / 80 * 3 / nl  # scale to classes and layers
-    hyp['obj'] *= (imgsz / 640) ** 2 * 3 / nl  # scale to image size and layers
-    hyp['label_smoothing'] = opt.label_smoothing
+    # nl = de_parallel(model).model[-1].nl  # number of detection layers (to scale hyps)
+    # hyp['box'] *= 3 / nl  # scale to layers
+    # hyp['cls'] *= nc / 80 * 3 / nl  # scale to classes and layers
+    # hyp['obj'] *= (imgsz / 640) ** 2 * 3 / nl  # scale to image size and layers
+    
+    # hyp['label_smoothing'] = opt.label_smoothing  # in compute loss, not used in simota
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
     model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
@@ -276,10 +287,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
 
     # init compute_loss class
-    if model.tag.upper() == 'YOLOX':
-        from models.loss.yolox import ComputeLoss
-    elif model.tag.upper() == 'YOLOV5':
-        from models.loss.yolov5 import ComputeLoss
+    # if model.tag.upper() == 'YOLOX':
+    #     from models.loss.yolox import ComputeLoss
+    # elif model.tag.upper() == 'YOLOV5':
+    #     from models.loss.yolov5 import ComputeLoss
+    from models.loss.simota import ComputeLoss
     compute_loss = ComputeLoss(model)  
 
 
@@ -303,12 +315,14 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             dataset.mosaic = False  # close mosaic
 
         # mloss setting
-        if model.tag.lower() == 'yolox':
-            mloss = torch.zeros(4, device=device)  # mean losses
-            LOGGER.info(('\n' + '%10s' * 8) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'L1', 'LABELS', 'SIZE'))
-        elif model.tag.lower() == 'yolov5':
-            mloss = torch.zeros(3, device=device)  # mean losses
-            LOGGER.info(('\n' + '%10s' * 7) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'LABELS', 'SIZE'))
+        mloss = torch.zeros(4, device=device)  # mean losses
+        LOGGER.info(('\n' + '%10s' * 8) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'L1', 'LABELS', 'SIZE'))
+        # if model.tag.lower() == 'yolox':
+        #     mloss = torch.zeros(4, device=device)  # mean losses
+        #     LOGGER.info(('\n' + '%10s' * 8) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'L1', 'LABELS', 'SIZE'))
+        # elif model.tag.lower() == 'yolov5':
+        #     mloss = torch.zeros(3, device=device)  # mean losses
+        #     LOGGER.info(('\n' + '%10s' * 7) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'LABELS', 'SIZE'))
 
         # train_loader
         if RANK != -1:
@@ -406,7 +420,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # Save model
             if (not nosave) or final_epoch:  # if save
                 ckpt = {
-                    'tag': model.tag,   # add model tag
+                    # 'tag': model.tag,   # add model tag
                     'epoch': epoch,
                     'best_fitness': best_fitness,
                     'model': deepcopy(de_parallel(model)).half(),
@@ -481,7 +495,7 @@ def parse_opt(known=False):
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
     parser.add_argument('--noval', action='store_true', help='only validate final epoch')
-    parser.add_argument('--noautoanchor', action='store_true', help='disable AutoAnchor')
+    # parser.add_argument('--noautoanchor', action='store_true', help='disable AutoAnchor')
     parser.add_argument('--noplots', action='store_true', help='save no plot files')
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--cache', type=str, nargs='?', const='ram', help='--cache images in "ram" (default) or "disk"')
@@ -497,7 +511,7 @@ def parse_opt(known=False):
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--quad', action='store_true', help='quad dataloader')
     parser.add_argument('--cos-lr', action='store_true', help='cosine LR scheduler')
-    parser.add_argument('--label-smoothing', type=float, default=0.0, help='Label smoothing epsilon')
+    # parser.add_argument('--label-smoothing', type=float, default=0.0, help='Label smoothing epsilon')
     parser.add_argument('--patience', type=int, default=100, help='EarlyStopping patience (epochs without improvement)')
     parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone=10, first3=0 1 2')
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
