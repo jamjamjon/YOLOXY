@@ -2,11 +2,9 @@
 Common modules
 """
 
-# import json
 import math
 import platform
 import warnings
-# from collections import OrderedDict, namedtuple
 from copy import copy
 from pathlib import Path
 import rich
@@ -50,6 +48,169 @@ class Conv(nn.Module):
 
     def forward_fuse(self, x):
         return self.act(self.conv(x))
+
+
+class CB(nn.Module):
+    # convolution + bn
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p), groups=g, bias=False)
+        self.bn = nn.BatchNorm2d(c2)
+
+    def forward(self, x):
+        return self.bn(self.conv(x))
+
+
+class RepConv(nn.Module):
+    # rep convolution block
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+
+        assert k == 3, "RepConv Block always with 3x3 Conv"
+
+        self.conv3x3 = CB(c1, c2, k=k, s=s, p=p, g=g)
+        self.conv1x1 = CB(c1, c2, k=1, s=s, p=0, g=g)
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+
+    def forward(self, x):
+        if hasattr(self, 'fusedconv'):
+            y = self.fusedconv(x)
+        else:
+            y = self.conv1x1(x) + self.conv3x3(x)
+        return self.act(y)
+
+    def fuse_repconv(self):
+        if not hasattr(self, 'fusedconv'):   
+            self.fusedconv = nn.Conv2d(self.conv3x3.conv.in_channels, 
+                                        self.conv3x3.conv.out_channels, 
+                                        self.conv3x3.conv.kernel_size, 
+                                        self.conv3x3.conv.stride, 
+                                        self.conv3x3.conv.padding, 
+                                        self.conv3x3.conv.groups, 
+                                        bias=True)
+
+        kernel, bias = self.get_equivalent_kernel_bias()
+        self.fusedconv.weight.data = kernel
+        self.fusedconv.bias.data = bias
+        for para in self.parameters():
+            para.detach_()
+        if hasattr(self, 'conv3x3'):
+            self.__delattr__('conv3x3')
+        if hasattr(self, 'conv1x1'):
+            self.__delattr__('conv1x1')
+
+    def get_equivalent_kernel_bias(self):
+        kernel3x3, bias3x3 = self._fuse_bn_tensor(self.conv3x3)
+        kernel1x1, bias1x1 = self._fuse_bn_tensor(self.conv1x1)
+        return kernel3x3 + self._pad_1x1_to_3x3_tensor(kernel1x1), bias3x3 + bias1x1
+
+    def _pad_1x1_to_3x3_tensor(self, kernel1x1):
+        if kernel1x1 is None:
+            return 0
+        else:
+            return nn.functional.pad(kernel1x1, [1, 1, 1, 1])
+
+    def _fuse_bn_tensor(self, branch):
+        if branch is None:
+            return 0, 0
+        kernel = branch.conv.weight
+        running_mean = branch.bn.running_mean
+        running_var = branch.bn.running_var
+        gamma = branch.bn.weight
+        beta = branch.bn.bias
+        eps = branch.bn.eps
+        std = (running_var + eps).sqrt()
+        t = (gamma / std).reshape((-1, 1, 1, 1))
+        return kernel * t, beta - running_mean * gamma / std 
+
+
+class AsymConv(nn.Module):
+    # Asymmetric Conv
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, act=True):
+        super().__init__()
+
+        self.convkxk = CB(c1, c2, k, s)            # k x k Conv 
+        self.conv1xk = CB(c1, c2, (1, k), s)       # 1 x k Conv
+        self.convkx1 = CB(c1, c2, (k, 1), s)       # k x 1 Conv
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+
+
+    def forward(self, x):
+        if hasattr(self, 'fusedconv'):
+            y = self.fusedconv(x)
+        else:
+            
+            y_kxk = self.convkxk(x)
+            y_kx1 = self.convkx1(x)
+            y_1xk = self.conv1xk(x)
+            y = y_kxk + y_kx1 + y_1xk
+
+        return self.act(y)
+
+
+    def fuse_asymconv(self):
+        if not hasattr(self, 'fusedconv'):   
+            self.fusedconv = nn.Conv2d(self.convkxk.conv.in_channels, 
+                                        self.convkxk.conv.out_channels, 
+                                        self.convkxk.conv.kernel_size, 
+                                        self.convkxk.conv.stride, 
+                                        self.convkxk.conv.padding, 
+                                        self.convkxk.conv.groups, 
+                                        bias=True
+                                        )
+
+        kernel, bias = self.get_equivalent_kernel_bias()
+        self.fusedconv.weight.data = kernel
+        self.fusedconv.bias.data = bias     
+        for para in self.parameters():
+            para.detach_()
+        if hasattr(self, 'convkxk'):
+            self.__delattr__('convkxk')
+        if hasattr(self, 'convkx1'):
+            self.__delattr__('convkx1')
+        if hasattr(self, 'conv1xk'):
+            self.__delattr__('conv1xk')
+
+
+    def get_equivalent_kernel_bias(self):
+        # fuse conv * bn
+        kernelkxk, biaskxk = self._fuse_bn_tensor(self.convkxk)
+        kernel1xk, bias1xk = self._fuse_bn_tensor(self.conv1xk)
+        kernelkx1, biaskx1 = self._fuse_bn_tensor(self.convkx1)
+        
+        # fuse branch
+        self._add_to_square_kernel(kernelkxk, kernel1xk)
+        self._add_to_square_kernel(kernelkxk, kernelkx1)
+
+        return kernelkxk, biaskxk + bias1xk + biaskx1
+    
+    # fuse conv & bn
+    def _fuse_bn_tensor(self, branch):
+        if branch is None:
+            return 0, 0
+        kernel = branch.conv.weight
+        running_mean = branch.bn.running_mean
+        running_var = branch.bn.running_var
+        gamma = branch.bn.weight
+        beta = branch.bn.bias
+        eps = branch.bn.eps
+        std = (running_var + eps).sqrt()
+        t = (gamma / std).reshape((-1, 1, 1, 1))
+        return kernel * t, beta - running_mean * gamma / std 
+    
+    # fuse sym-kernel & asym-kernel
+    def _add_to_square_kernel(self, square_kernel, asym_kernel):
+        asym_h = asym_kernel.size(2)
+        asym_w = asym_kernel.size(3)
+        square_h = square_kernel.size(2)
+        square_w = square_kernel.size(3)
+        square_kernel[:, 
+                      :, 
+                      square_h // 2 - asym_h // 2: square_h // 2 - asym_h // 2 + asym_h,
+                      square_w // 2 - asym_w // 2: square_w // 2 - asym_w // 2 + asym_w
+                     ] += asym_kernel
+
+
 
 
 class DWConv(Conv):
@@ -111,6 +272,35 @@ class C3x(C3):
         super().__init__(c1, c2, n, shortcut, g, e)
         c_ = int(c2 * e)
         self.m = nn.Sequential(*(CrossConv(c_, c_, 3, 1, g, 1.0, shortcut) for _ in range(n)))
+
+
+class ESE(nn.Module):
+    """ Effective Squeeze-Excitation
+    From `CenterMask : Real-Time Anchor-Free Instance Segmentation` - https://arxiv.org/abs/1911.06667
+    Forward(640x640): 0.1591 ms
+    """
+    def __init__(self, c1, act=True):
+        super().__init__()
+        self.fc = nn.Conv2d(c1, c1, kernel_size=1, padding=0)
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())  # nn.LeakyReLU()
+
+    def forward(self, x):
+        return x * self.act(self.fc(x.mean((2, 3), keepdim=True)))
+
+
+class C3xESE(nn.Module):
+    # CSP Bottleneck with 3 convolutions + ESE
+    def __init__(self, c1, c2, n=1, ese=True, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.m = nn.Sequential(*(CrossConv(c_, c_, 3, 1, g, 1.0, shortcut) for _ in range(n)))
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(2 * c_, c2, 1)  # optional act=FReLU(c2)
+        self.ese = ESE(c2) if ese is True else nn.Identity()
+
+    def forward(self, x):
+        return self.cv3(self.ese(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1)))
 
 
 
@@ -194,7 +384,6 @@ class DetectX(nn.Module):
         self.nb = nc + 5    # number of detection box
         self.no = self.nb + 3 * self.nk    # number of outputs per anchor,  keypoint: (xi, yi, i_conf)
         self.nl = len(ch)  # number of detection layers, => 3
-        # self.na = self.anchors = anchors
         self.na = self.anchors = 1    # number of anchors 
         self.grid = [torch.zeros(1)] * self.nl    # TODO: init grid 用于保存每层的每个网格的坐标
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
@@ -216,10 +405,10 @@ class DetectX(nn.Module):
         for i in range(self.nl):
             # x[i] = self.m[i](x[i])
 
-            # bbox & cls head
-            if self.nk <= 0:
+            # det
+            if self.nk == 0:
                 x[i] = self.m[i](x[i])
-            else:   # keypoints head
+            else:   # keypoints 
                 x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
 
             # reshape tensor

@@ -56,10 +56,6 @@ class Model(nn.Module):
             LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
 
-        # anchors (no need, always = 1)
-        # if anchors:
-        #     LOGGER.info(f'Overriding model.yaml anchors with anchors={anchors}')
-        #     self.yaml['anchors'] = round(anchors)  # override yaml value
 
         # num of keypoints
         if nk and nk != self.yaml.get('nk', 0):
