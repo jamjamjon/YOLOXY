@@ -17,7 +17,7 @@ To be continued...
 |---|---|---|---|---|---
 |yolov5s-silu(v6.0) 						|640 |37.4 |**7.23** |**16.53** |**7.7** 
 |yoloxs 									|640 |40.5 |**9.0** |**26.8** | - 
-|xs-Conv-ciou 							|640 |TODO    |  |	|
+|xs-Conv-ciou 							|640 |ing    |  |	|
 |xs-Conv-siou 							|640 |TODO    |  |	|
 |xs-repConv-?iou 							|640 |TODO    |  |	|
 |xs-AsymConv-?iou 							|640 |TODO    |  |	|
