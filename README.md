@@ -15,7 +15,7 @@ To be continued...
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
 |---|---|---|---|---|---
 |yolov5s-silu(v6.0) 				|640 |37.4 |**7.23** |**16.53** |**7.7** 
-|yoloxs 					|640 |40.5 |**9.0** |**26.8** |**7.7** 
+|yoloxs 					|640 |40.5 |**9.0** |**26.8** | - 
 |xs-ConvHead(same backbone as yolov5) 		|640 |TODO    |  |	|
 |xs-ConvHead(same backbone as yolov5, v7.0) 	|640 |TODO    |  |	|
 
