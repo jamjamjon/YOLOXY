@@ -475,6 +475,7 @@ class DetectMultiBackend(nn.Module):
             model = attempt_load(weights if isinstance(weights, list) else w, device=device)
             stride = max(int(model.stride.max()), 32)  # model stride
             # tag = model.tag if hasattr(model, 'tag') else 'YOLOV5' # model tag: yolov5/x
+            nk = model.nk if hasattr(model, 'nk') else 0 
             names = model.module.names if hasattr(model, 'module') else model.names  # get class names
             model.half() if fp16 else model.float()
             self.model = model  # explicitly assign for to(), cpu(), cuda(), half()

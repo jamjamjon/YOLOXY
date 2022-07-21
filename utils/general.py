@@ -718,14 +718,36 @@ def xywh2xyxy(x):
     return y
 
 
-def xywhn2xyxy(x, w=640, h=640, padw=0, padh=0):
+# def xywhn2xyxy(x, w=640, h=640, padw=0, padh=0):
+#     # Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+#     y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+#     y[:, 0] = w * (x[:, 0] - x[:, 2] / 2) + padw  # top left x
+#     y[:, 1] = h * (x[:, 1] - x[:, 3] / 2) + padh  # top left y
+#     y[:, 2] = w * (x[:, 0] + x[:, 2] / 2) + padw  # bottom right x
+#     y[:, 3] = h * (x[:, 1] + x[:, 3] / 2) + padh  # bottom right y
+#     return y
+
+
+def xywhn2xyxy(x, w=640, h=640, padw=0, padh=0, has_kpt=False):
     # Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+    # it does the same operation as above for the key-points
     y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
     y[:, 0] = w * (x[:, 0] - x[:, 2] / 2) + padw  # top left x
     y[:, 1] = h * (x[:, 1] - x[:, 3] / 2) + padh  # top left y
     y[:, 2] = w * (x[:, 0] + x[:, 2] / 2) + padw  # bottom right x
     y[:, 3] = h * (x[:, 1] + x[:, 3] / 2) + padh  # bottom right y
+
+    # has keypoints
+    if has_kpt:
+        num_kpts = (x.shape[1] - 4) // 2
+        for kpt in range(num_kpts):
+            for kpt_instance in range(y.shape[0]):
+                if y[kpt_instance, 2 * kpt + 4] != 0:
+                    y[kpt_instance, 2 * kpt + 4] = w * y[kpt_instance, 2 * kpt + 4] + padw
+                if y[kpt_instance, 2 * kpt + 1 + 4] != 0:
+                    y[kpt_instance, 2 * kpt + 1 + 4] = h * y[kpt_instance, 2 * kpt + 1 + 4] + padh
     return y
+
 
 
 def xyxy2xywhn(x, w=640, h=640, clip=False, eps=0.0):

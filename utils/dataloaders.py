@@ -105,10 +105,11 @@ def create_dataloader(path,
                       image_weights=False,
                       quad=False,
                       prefix='',
-                      shuffle=False):
+                      shuffle=False,
+                      nk=0,
+                      ):
     if rect and shuffle:
-        # LOGGER.warning('WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False')
-        CONSOLE.print('[bold red]WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False')
+        LOGGER.warning('WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False')
         shuffle = False
     with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
         dataset = LoadImagesAndLabels(
@@ -123,7 +124,9 @@ def create_dataloader(path,
             stride=int(stride),
             pad=pad,
             image_weights=image_weights,
-            prefix=prefix)
+            prefix=prefix,
+            nk=nk
+            )
 
     batch_size = min(batch_size, len(dataset))
     nd = torch.cuda.device_count()  # number of CUDA devices
@@ -411,7 +414,8 @@ class LoadImagesAndLabels(Dataset):
                  single_cls=False,
                  stride=32,
                  pad=0.0,
-                 prefix=''):
+                 prefix='',
+                 nk=0):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -422,6 +426,11 @@ class LoadImagesAndLabels(Dataset):
         self.stride = stride
         self.path = path
         self.albumentations = Albumentations() if augment else None
+
+        # kpt
+        self.nk = nk
+        self.flip_index = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
+
 
         try:
             f = []  # image files
@@ -458,7 +467,7 @@ class LoadImagesAndLabels(Dataset):
         nf, nm, ne, nc, n = cache.pop('results')  # found, missing, empty, corrupt, total
         if exists and LOCAL_RANK in {-1, 0}:
             # d = f"Scanning '{cache_path}' images and labels... {nf} found, {nm} missing, {ne} empty, {nc} corrupt"
-            d = f"Scanning '{cache_path}' | {nf} found, {nm} missing, {ne} empty, {nc} corrupt"
+            d = f"Scanning '{cache_path}' => | {nf} found | {nm} missing | {ne} empty | {nc} corrupt |"
             tqdm(None, desc=prefix + d, total=n, initial=n, bar_format=BAR_FORMAT, colour='#FFF0F5')  # display cache results
             if cache['msgs']:
                 LOGGER.info('\n'.join(cache['msgs']))  # display warnings
@@ -536,11 +545,12 @@ class LoadImagesAndLabels(Dataset):
 
     def cache_labels(self, path=Path('./labels.cache'), prefix=''):
         # Cache dataset labels, check images and read shapes
+
         x = {}  # dict
         nm, nf, ne, nc, msgs = 0, 0, 0, 0, []  # number missing, found, empty, corrupt, messages
-        desc = f"{prefix}Scanning '{path.parent / path.stem}' images and labels..."
+        desc = f"{prefix}Scanning '{path.parent / path.stem}' images and labels =>"
         with Pool(NUM_THREADS) as pool:
-            pbar = tqdm(pool.imap(verify_image_label, zip(self.im_files, self.label_files, repeat(prefix))),
+            pbar = tqdm(pool.imap(verify_image_label, zip(self.im_files, self.label_files, repeat(prefix), repeat(self.nk))),
                         desc=desc,
                         total=len(self.im_files),
                         bar_format=BAR_FORMAT,
@@ -554,9 +564,10 @@ class LoadImagesAndLabels(Dataset):
                     x[im_file] = [lb, shape, segments]
                 if msg:
                     msgs.append(msg)
-                pbar.desc = f"{desc}{nf} found, {nm} missing, {ne} empty, {nc} corrupt"
+                pbar.desc = f"{desc} | {nf} found | {nm} missing | {ne} empty | {nc} corrupt"
 
         pbar.close()
+
         if msgs:
             LOGGER.info('\n'.join(msgs))
         if nf == 0:
@@ -607,20 +618,26 @@ class LoadImagesAndLabels(Dataset):
 
             labels = self.labels[index].copy()
             if labels.size:  # normalized xywh to pixel xyxy format
-                labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
+                # labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
+                labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1], has_kpt=(self.nk > 0))
 
-            if self.augment:
+            if self.augment:  # TODO
                 img, labels = random_perspective(img,
                                                  labels,
                                                  degrees=hyp['degrees'],
                                                  translate=hyp['translate'],
                                                  scale=hyp['scale'],
                                                  shear=hyp['shear'],
-                                                 perspective=hyp['perspective'])
+                                                 perspective=hyp['perspective'],
+                                                 nk=self.nk
+                                                 ) 
 
         nl = len(labels)  # number of labels
         if nl:
             labels[:, 1:5] = xyxy2xywhn(labels[:, 1:5], w=img.shape[1], h=img.shape[0], clip=True, eps=1E-3)
+            if self.nk > 0:
+                labels[:, 6::2] /= img.shape[0]     # normalize to 0-1
+                labels[:, 5::2] /= img.shape[1]     # normalize to 0-1
 
         if self.augment:
             # Albumentations
@@ -635,18 +652,24 @@ class LoadImagesAndLabels(Dataset):
                 img = np.flipud(img)
                 if nl:
                     labels[:, 2] = 1 - labels[:, 2]
+                    if self.nk > 0:   # kpt
+                        labels[:, 6::2] = (1 - labels[:, 6::2]) * (labels[:, 6::2] != 0)
 
             # Flip left-right
             if random.random() < hyp['fliplr']:
                 img = np.fliplr(img)
                 if nl:
                     labels[:, 1] = 1 - labels[:, 1]
+                    if self.nk > 0:   # kpt
+                        labels[:, 5::2] = (1 - labels[:, 5::2]) * (labels[:, 5::2] != 0)
+                        labels[:, 5::2] = labels[:, 5::2][:, self.flip_index]
+                        labels[:, 6::2] = labels[:, 6::2][:, self.flip_index]
 
             # Cutouts
             # labels = cutout(img, labels, p=0.5)
             # nl = len(labels)  # update after cutout
 
-        labels_out = torch.zeros((nl, 6))
+        labels_out = torch.zeros((nl, 6 + self.nk * 2)) # kpt
         if nl:
             labels_out[:, 1:] = torch.from_numpy(labels)
 
@@ -713,7 +736,8 @@ class LoadImagesAndLabels(Dataset):
             # Labels
             labels, segments = self.labels[index].copy(), self.segments[index].copy()
             if labels.size:
-                labels[:, 1:] = xywhn2xyxy(labels[:, 1:], w, h, padw, padh)  # normalized xywh to pixel xyxy format
+                # labels[:, 1:] = xywhn2xyxy(labels[:, 1:], w, h, padw, padh)  # normalized xywh to pixel xyxy format
+                labels[:, 1:] = xywhn2xyxy(labels[:, 1:], w, h, padw, padh, has_kpt=self.nk > 0)  # normalized xywh to pixel xyxy format
                 segments = [xyn2xy(x, w, h, padw, padh) for x in segments]
             labels4.append(labels)
             segments4.extend(segments)
@@ -734,7 +758,9 @@ class LoadImagesAndLabels(Dataset):
                                            scale=self.hyp['scale'],
                                            shear=self.hyp['shear'],
                                            perspective=self.hyp['perspective'],
-                                           border=self.mosaic_border)  # border to remove
+                                           border=self.mosaic_border,
+                                           nk=self.nk,
+                                           )  # border to remove
 
         return img4, labels4
 
@@ -810,7 +836,8 @@ class LoadImagesAndLabels(Dataset):
                                            scale=self.hyp['scale'],
                                            shear=self.hyp['shear'],
                                            perspective=self.hyp['perspective'],
-                                           border=self.mosaic_border)  # border to remove
+                                           border=self.mosaic_border,
+                                           nk=self.nk,)  # border to remove
 
         return img9, labels9
 
@@ -924,7 +951,7 @@ def autosplit(path=DATASETS_DIR / 'coco128/images', weights=(0.9, 0.1, 0.0), ann
 
 def verify_image_label(args):
     # Verify one image-label pair
-    im_file, lb_file, prefix = args
+    im_file, lb_file, prefix, nkpts = args   # num_keypoints
     nm, nf, ne, nc, msg, segments = 0, 0, 0, 0, '', []  # number (missing, found, empty, corrupt), message, segments
     try:
         # verify images
@@ -945,16 +972,42 @@ def verify_image_label(args):
             nf = 1  # label found
             with open(lb_file) as f:
                 lb = [x.split() for x in f.read().strip().splitlines() if len(x)]
-                if any(len(x) > 6 for x in lb):  # is segment
+                if any(len(x) > 6 for x in lb) and (nkpts <= 0):  # is segment; 
                     classes = np.array([x[0] for x in lb], dtype=np.float32)
                     segments = [np.array(x[1:], dtype=np.float32).reshape(-1, 2) for x in lb]  # (cls, xy1...)
                     lb = np.concatenate((classes.reshape(-1, 1), segments2boxes(segments)), 1)  # (cls, xywh)
                 lb = np.array(lb, dtype=np.float32)
             nl = len(lb)
             if nl:
-                assert lb.shape[1] == 5, f'labels require 5 columns, {lb.shape[1]} columns detected'
                 assert (lb >= 0).all(), f'negative label values {lb[lb < 0]}'
-                assert (lb[:, 1:] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 1:][lb[:, 1:] > 1]}'
+
+                # has keypoints
+                if nkpts > 0:  
+                    assert (lb.shape[1] == nkpts * 3 + 5) or (lb.shape[1] == nkpts * 2 + 5) , f'labels require {nkpts * 3 + 5} or {nkpts * 2 + 5} columns, {lb.shape[1]} columns detected'
+                    # kpt => (x_i, y_i)
+                    if lb.shape[1] == nkpts * 2 + 5:
+                        assert (lb[:, 5::2] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 5::2][lb[:, 5::2] > 1]}'
+                        assert (lb[:, 6::2] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 6::2][lb[:, 6::2] > 1]}'
+                    # kpt => (x_i, y_i, visiable_i)
+                    elif lb.shape[1] == nkpts * 3 + 5:
+                        assert (lb[:, 5::3] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 5::3][lb[:, 5::3] > 1]}'
+                        assert (lb[:, 6::3] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 6::3][lb[:, 6::3] > 1]}'
+                    
+                        # remove visible column
+                        kpts_ = np.zeros((lb.shape[0], nkpts * 2 + 5))
+                        for i in range(nl):
+                            kpt_ = np.delete(lb[i, 5:], np.arange(2, lb.shape[1] - 5, 3))
+                            kpts_[i] = np.hstack((lb[i, :5], kpt_))
+                        lb = kpts_
+
+                    # check again to make sure kpt => (x_i, y_i)
+                    assert (lb.shape[1] == nkpts * 2 + 5), f'labels require {nkpts * 2 + 5} columns after removing occlusion column, {lb.shape[1]} columns detected'
+
+                # detection
+                else:
+                    assert lb.shape[1] == 5, f'labels require 5 columns, {lb.shape[1]} columns detected'
+                    assert (lb[:, 1:5] <= 1).all(), f'non-normalized or out of bounds coordinates {lb[:, 1:5][lb[:, 1:5] > 1]}'
+                
                 _, i = np.unique(lb, axis=0, return_index=True)
                 if len(i) < nl:  # duplicate row check
                     lb = lb[i]  # remove duplicates
@@ -963,10 +1016,12 @@ def verify_image_label(args):
                     msg = f'{prefix}WARNING: {im_file}: {nl - len(i)} duplicate labels removed'
             else:
                 ne = 1  # label empty
-                lb = np.zeros((0, 5), dtype=np.float32)
+                # lb = np.zeros((0, 5), dtype=np.float32)
+                lb = np.zeros((0, 5 + nkpts * 2), dtype=np.float32)
         else:
             nm = 1  # label missing
-            lb = np.zeros((0, 5), dtype=np.float32)
+            # lb = np.zeros((0, 5), dtype=np.float32)
+            lb = np.zeros((0, 5 + nkpts * 2), dtype=np.float32)
         return im_file, lb, shape, segments, nm, nf, ne, nc, msg
     except Exception as e:
         nc = 1

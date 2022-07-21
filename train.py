@@ -40,7 +40,7 @@ from utils.general import (LOGGER, check_amp, check_dataset, check_file, check_g
 from utils.loggers import Loggers
 from utils.loggers.wandb.wandb_utils import check_wandb_resume
 from utils.metrics import fitness
-from utils.plots import plot_labels
+from utils.plots import plot_labels, plot_images
 from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, torch_distributed_zero_first, 
                                 smart_DDP)
 
@@ -51,9 +51,9 @@ WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
 
 
 def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
-    save_dir, epochs, batch_size, weights, single_cls, data, cfg, resume, noval, nosave, workers, freeze = \
+    save_dir, epochs, batch_size, weights, single_cls, data, cfg, resume, noval, nosave, workers, freeze, mission = \
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.data, opt.cfg, \
-        opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze
+        opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze, opt.mission
     callbacks.run('on_pretrain_routine_start')
 
     # Directories
@@ -94,6 +94,21 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     train_path, val_path = data_dict['train'], data_dict['val']
     nc = 1 if single_cls else int(data_dict['nc'])  # number of classes in data.yaml
     nk = data_dict.get('nk', 0)   # number of keypoints in data.yaml, 0 default => bbox detection
+    
+    # kpts = kpts or (nk > 0)  # nk > 0 or kpts ==> keypoints detection
+    # do_kpts = nk > 0  # nk > 0 ==> keypoints detection
+
+    # TODO: mission check
+    # if nk == 0:
+    #     assert mission == 'det', "nk=0  =>  mission=det"
+    # elif nk == -1:
+    #     assert mission == 'seg', "nk=-1  =>  mission=seg"
+    # else:
+    #     assert mission == 'kpt', "nk!=-1  =>  mission=kpt"
+    # mission = 'kpt' if nk > 0 else 'det'
+    # LOGGER.info(f"{colorstr('Mission: ')} {mission}")
+        
+
     names = ['item'] if single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
     assert len(names) == nc, f'{len(names)} names found for nc={nc} dataset in {data}'  # check
     is_coco = isinstance(val_path, str) and val_path.endswith('coco/val2017.txt')  # COCO dataset
@@ -114,7 +129,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     else:
         model = Model(cfg, ch=3, nc=nc, nk=nk).to(device)  # create
         LOGGER.info(f"{colorstr('Train From Scratch.')}")  # report
-
 
     # check AMP
     amp = check_amp(model)  
@@ -224,7 +238,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                               image_weights=opt.image_weights,
                                               quad=opt.quad,
                                               prefix=colorstr('TRAIN DATASETS: '),
-                                              shuffle=True)
+                                              shuffle=True,
+                                              nk=nk,
+                                              )
     mlc = int(np.concatenate(dataset.labels, 0)[:, 0].max())  # max label class
     nb = len(train_loader)  # number of batches
     assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
@@ -242,7 +258,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                        rank=-1,
                                        workers=workers * 2,
                                        pad=0.5,
-                                       prefix=colorstr('VAL DATASETS: '))[0]
+                                       prefix=colorstr('VAL DATASETS: '), 
+                                       nk=nk,
+                                       )[0]
 
         if not resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -255,6 +273,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             model.half().float()  # pre-reduce anchor precision
 
         callbacks.run('on_pretrain_routine_end')
+
+
 
     # DDP mode
     if cuda and RANK != -1:
@@ -326,9 +346,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             pbar = tqdm(pbar, total=nb, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5')  # progress bar
         optimizer.zero_grad()
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
-            callbacks.run('on_train_batch_start')
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
+            callbacks.run('on_train_batch_start', ni, imgs, targets, paths, plots, nk, 10)  # plot batch images
 
             # Warmup
             if ni <= nw:
@@ -376,7 +396,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 pbar.set_description(('%10s' * 2 + '%10.4g' * (mloss.shape[0] + 2)) %
                                      (f'{epoch}/{epochs - 1}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots)
+                callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots, nk)
                 if callbacks.stop_training:
                     return
             # end batch ------------------------------------------------------------------------------------------------
@@ -516,6 +536,10 @@ def parse_opt(known=False):
     parser.add_argument('--upload_dataset', nargs='?', const=True, default=False, help='W&B: Upload data, "val" option')
     parser.add_argument('--bbox_interval', type=int, default=-1, help='W&B: Set bounding-box image logging interval')
     parser.add_argument('--artifact_alias', type=str, default='latest', help='W&B: Version of dataset artifact to use')
+
+    # mission option
+    parser.add_argument('--mission', type=str, choices=['det', 'seg', 'kpt'], default='det', help='mission')
+
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
     return opt

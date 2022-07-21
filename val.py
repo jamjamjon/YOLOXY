@@ -124,6 +124,7 @@ def run(
         # Load model
         model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
         stride, pt, jit, engine = model.stride, model.pt, False, False
+        nk = model.nk   # num of keypoints
         imgsz = check_img_size(imgsz, s=stride)  # check image size
         half = model.fp16  # FP16 supported on limited backends with CUDA
         if engine:
@@ -247,9 +248,10 @@ def run(
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
         # Plot images
-        if plots and batch_i < 3:
-            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names)  # labels
-            plot_images(im, output_to_target(out), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names)  # pred
+        # TODO: callbacks.run('on_val_batch_start', ni, imgs, targets, paths, plots, nk, 10)  # plot batch images
+        if plots and batch_i < 10:
+            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, nk=nk)  # labels
+            plot_images(im, output_to_target(out), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=nk)  # pred
 
         callbacks.run('on_val_batch_end')
 

@@ -64,8 +64,11 @@ class Model(nn.Module):
 
         # parse model
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
-        self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
+        self.names = [str(i) for i in range(self.yaml['nc'])]  # default det names
         self.inplace = self.yaml.get('inplace', True)
+
+        # TODO
+        # self.task = 'kpts' if nk > 0 else 'det'
 
         # Build strides, anchors
         m = self.model[-1]  # Head 

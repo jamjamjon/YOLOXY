@@ -69,6 +69,7 @@ class Annotator:
     def __init__(self, im, line_width=None, font_size=None, font='Arial.ttf', pil=False, example='abc'):
         assert im.data.contiguous, 'Image not contiguous. Apply np.ascontiguousarray(im) to Annotator() input images.'
         non_ascii = not is_ascii(example)  # non-latin labels, i.e. asian, arabic, cyrillic
+
         self.pil = pil or non_ascii
         if self.pil:  # use PIL
             self.im = im if isinstance(im, Image.Image) else Image.fromarray(im)
@@ -79,7 +80,8 @@ class Annotator:
             self.im = im
         self.lw = line_width or max(round(sum(im.shape) / 2 * 0.003), 2)  # line width
 
-    def box_label(self, box, label='', color=(128, 128, 128), txt_color=(255, 255, 255)):
+    def box_label(self, box, label='', color=(128, 128, 128), txt_color=(255, 255, 255), nk=0, kpts=None):
+
         # Add one xyxy box to image with label
         if self.pil or not is_ascii(label):
             self.draw.rectangle(box, width=self.lw, outline=color)  # box
@@ -93,6 +95,52 @@ class Annotator:
                 )
                 # self.draw.text((box[0], box[1]), label, fill=txt_color, font=self.font, anchor='ls')  # for PIL>8.0
                 self.draw.text((box[0], box[1] - h if outside else box[1]), label, fill=txt_color, font=self.font)
+
+                # draw keypoints
+                if kpts is not None and nk > 0:
+                    
+                    skeleton_pair = [[16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12],
+                                    [7, 13], [6, 7], [6, 8], [7, 9], [8, 10], [9, 11], [2, 3],
+                                    [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]]
+
+                    # draw circle
+                    step = len(kpts) // nk
+                    w_, h_ = self.im.size[0], self.im.size[1]  # 
+
+                    # iter kpts
+                    for idx in range(nk):
+                        x, y = kpts[step * idx], kpts[step * idx + 1]
+                        if not (x % w_ == 0 or y % h_ == 0):
+                            if step == 3:   # when det
+                                conf = kpts[step * idx + 2]
+                                if conf < 0.5:   # filter kpt which conf < 0.5
+                                    continue
+                            r_ = max(5, self.lw)  # radius
+                            self.draw.ellipse((x-r_, y-r_, x+r_, y+r_), 'yellow', 'green', width=2)
+
+                    # draw connection
+                    for idx, kpt_pair in enumerate(skeleton_pair):
+
+                        p1 = (kpts[(kpt_pair[0] - 1) * step], kpts[(kpt_pair[0] - 1) * step + 1])
+                        p2 = (kpts[(kpt_pair[1] - 1) * step], kpts[(kpt_pair[1] - 1) * step + 1])
+                        
+                        # has conf when detection
+                        if step == 3:
+                            conf1 = kpts[(kpt_pair[0] - 1) * step + 2]
+                            conf2 = kpts[(kpt_pair[1] - 1) * step + 2]
+                            if conf1 < 0.5 or conf2 < 0.5:
+                                continue
+
+                        # filter outliers
+                        if p1[0] % w_ == 0 or p1[1] % h_ == 0 or p1[0] < 0 or p1[1] < 0:
+                            continue
+                        if p2[0] % w_ == 0 or p2[1] % h_ == 0 or p2[0] < 0 or p2[1] < 0:
+                            continue
+
+                        r_ = min(3, self.lw)  # radius
+                        self.draw.line((p1, p2), 'yellow', width=r_)
+
+
         else:  # cv2
             p1, p2 = (int(box[0]), int(box[1])), (int(box[2]), int(box[3]))
             cv2.rectangle(self.im, p1, p2, color, thickness=self.lw, lineType=cv2.LINE_AA)
@@ -109,6 +157,10 @@ class Annotator:
                             txt_color,
                             thickness=tf,
                             lineType=cv2.LINE_AA)
+
+            # TODO: draw keypoints parts
+
+
 
     def rectangle(self, xy, fill=None, outline=None, width=1):
         # Add rectangle to image (PIL-only)
@@ -183,15 +235,22 @@ def output_to_target(output):
     return np.array(targets)
 
 
-@threaded
-def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=1920, max_subplots=16):
+# @threaded
+def plot_images(images, targets, paths=None, fname='images.jpg', names=None, 
+                max_size=1920, max_subplots=25,
+                nk=0,
+                ):
+
     # Plot image grid with labels
     if isinstance(images, torch.Tensor):
         images = images.cpu().float().numpy()
     if isinstance(targets, torch.Tensor):
         targets = targets.cpu().numpy()
+
+    # de-normalise (optional)
     if np.max(images[0]) <= 1:
-        images *= 255  # de-normalise (optional)
+        images *= 255  
+
     bs, _, h, w = images.shape  # batch size, _, height, width
     bs = min(bs, max_subplots)  # limit plot images
     ns = np.ceil(bs ** 0.5)  # number of subplots (square)
@@ -215,18 +274,30 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
     # Annotate
     fs = int((h + w) * ns * 0.01)  # font size
     annotator = Annotator(mosaic, line_width=round(fs / 10), font_size=fs, pil=True, example=names)
+    
+    # i proceed with i before
     for i in range(i + 1):
         x, y = int(w * (i // ns)), int(h * (i % ns))  # block origin
         annotator.rectangle([x, y, x + w, y + h], None, (255, 255, 255), width=2)  # borders
         if paths:
             annotator.text((x + 5, y + 5 + h), text=Path(paths[i]).name[:40], txt_color=(220, 220, 220))  # filenames
+        
         if len(targets) > 0:
             ti = targets[targets[:, 0] == i]  # image targets
             boxes = xywh2xyxy(ti[:, 2:6]).T
             classes = ti[:, 1].astype('int')
-            labels = ti.shape[1] == 6  # labels if no conf column
+            labels = ti.shape[1] == 6 + nk * 2  # labels if no conf column
             conf = None if labels else ti[:, 6]  # check for confidence presence (label vs pred)
+            if nk > 0:
+                if conf is None:
+                    kpts = ti[:, 6:].T   # GT kpts
+                else:
+                    kpts = ti[:, 7:].T   # preds kpts
 
+            else:
+                kpts = None
+
+            # bboxes
             if boxes.shape[1]:
                 if boxes.max() <= 1.01:  # if normalized with tolerance 0.01
                     boxes[[0, 2]] *= w  # scale to pixels
@@ -235,13 +306,50 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
                     boxes *= scale
             boxes[[0, 2]] += x
             boxes[[1, 3]] += y
+
+            # step when GT and pred
+            if conf is not None:
+                step = 3
+            else:
+                step = 2
+
+            # keypoints
+            if nk > 0 and kpts.shape[1]:
+                if kpts.max() < 1.01:
+                    kpts[list(range(0, len(kpts), step))] *= w
+                    kpts[list(range(1, len(kpts), step))] *= h
+                elif scale < 1:
+                    kpts[list(range(0, len(kpts), step))] *= scale
+                    kpts[list(range(1, len(kpts), step))] *= scale
+
+
+                # will cause 0 -> 480, 640, solve at next
+                kpts[list(range(0, len(kpts), step))] += x  
+                kpts[list(range(1, len(kpts), step))] += y
+
+                # filter point on the block line, 0 -> 480, 640
+                # print(f'=========>w, h {w, h}')
+                kpts = np.where(kpts % w == 0, 0, kpts)
+                kpts = np.where(kpts % h == 0, 0, kpts)
+                # kpts = np.where(kpts == x, 0, kpts)
+                # kpts = np.where(kpts == y, 0, kpts)
+                # kpts = np.where(kpts == w, 0, kpts)
+                # kpts = np.where(kpts == h, 0, kpts)
+                # kpts = np.where(kpts == x + w, 0, kpts)
+                # kpts = np.where(kpts == y + h, 0, kpts)
+
             for j, box in enumerate(boxes.T.tolist()):
                 cls = classes[j]
                 color = colors(cls)
                 cls = names[cls] if names else cls
                 if labels or conf[j] > 0.25:  # 0.25 conf thresh
                     label = f'{cls}' if labels else f'{cls} {conf[j]:.1f}'
-                    annotator.box_label(box, label, color=color)
+                    
+                    if kpts is not None:
+                        annotator.box_label(box, label, color=color, kpts=kpts[:, j], nk=nk)
+                    else:
+                        annotator.box_label(box, label, color=color, nk=nk)
+
     annotator.im.save(fname)  # save
 
 
@@ -342,7 +450,8 @@ def plot_val_study(file='', dir='', x=None):  # from utils.plots import *; plot_
 def plot_labels(labels, names=(), save_dir=Path('')):
     # plot dataset labels
     # LOGGER.info(f"Plotting labels to {save_dir / 'labels.jpg'}... ")
-    c, b = labels[:, 0], labels[:, 1:].transpose()  # classes, boxes
+    # c, b = labels[:, 0], labels[:, 1:].transpose()  # classes, boxes
+    c, b, kpts = labels[:, 0], labels[:, 1:5].transpose(), labels[:, 5:].transpose()  # classes, boxes
     nc = int(c.max() + 1)  # number of classes
     x = pd.DataFrame(b.transpose(), columns=['x', 'y', 'width', 'height'])
 
@@ -365,6 +474,7 @@ def plot_labels(labels, names=(), save_dir=Path('')):
         ax[0].set_xticklabels(names, rotation=90, fontsize=10)
     else:
         ax[0].set_xlabel('classes')
+
     sn.histplot(x, x='x', y='y', ax=ax[2], bins=50, pmax=0.9)
     sn.histplot(x, x='width', y='height', ax=ax[3], bins=50, pmax=0.9)
 
@@ -372,7 +482,9 @@ def plot_labels(labels, names=(), save_dir=Path('')):
     labels[:, 1:3] = 0.5  # center
     labels[:, 1:] = xywh2xyxy(labels[:, 1:]) * 2000
     img = Image.fromarray(np.ones((2000, 2000, 3), dtype=np.uint8) * 255)
-    for cls, *box in labels[:1000]:
+
+
+    for cls, *box in labels[:1000, :5]:
         ImageDraw.Draw(img).rectangle(box, width=1, outline=colors(cls))  # plot
     ax[1].imshow(img)
     ax[1].axis('off')
@@ -384,6 +496,7 @@ def plot_labels(labels, names=(), save_dir=Path('')):
     plt.savefig(save_dir / 'labels.jpg', dpi=200)
     matplotlib.use('Agg')
     plt.close()
+
 
 
 def plot_results(file='path/to/results.csv', dir=''):

@@ -14,6 +14,7 @@ val: val2017.txt  # val images (relative to 'path') 5000 images
 # test: test-dev2017.txt  # 20288 of 40670 images, submit to https://competitions.codalab.org/competitions/20794
 
 # Classes
+# nk: 0   # number of keypoints (optional when do keypoints detection; 0 => bbox detection)
 nc: 80  # number of classes
 names: ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
         'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
