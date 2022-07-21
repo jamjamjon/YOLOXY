@@ -36,11 +36,14 @@ To be continued...
 	[x] hyps config
 	[x] byte_tracker 
 	[x] remove yolov5 parts
+	[x] pose-estimation(keypoints detection) -> dataloader and model
 
-	[] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
-	[] DBBConv(), Inception_like_conv(), Xception_like_conv() 
-	[] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
-	[] pose-estimation  =>  add task tag 
+	[] pose-estimation(keypoints detection) -> head and loss
+	
+	[ing] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
+	[ing] DBBConv(), Inception_like_conv(), Xception_like_conv() 
+	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
+	   
 	[] Mac calculations in model_info()
 	[] rknn export parts when backbone fixed
 	[] ObjectBox
