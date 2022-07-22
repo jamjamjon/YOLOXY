@@ -9,6 +9,7 @@ import sys
 import time
 import warnings
 from pathlib import Path
+from tqdm import tqdm
 
 import pandas as pd
 import torch
@@ -23,10 +24,12 @@ if platform.system() != 'Windows':
     ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.experimental import attempt_load
-# from models.yolo import Detect
+from models.yolo import DetectX
+from models.common import *
+from models.activations import *
 from utils.dataloaders import LoadImages
 from utils.general import (LOGGER, check_dataset, check_img_size, check_requirements, check_version, colorstr,
-                           file_size, print_args, url2file)
+                           file_size, print_args, url2file, increment_path)
 from utils.torch_utils import select_device
 
 
@@ -35,6 +38,7 @@ def export_formats():
     x = [
             ['PyTorch', '-', '.pt', True],
             ['ONNX', 'onnx', '.onnx', True],
+            ['RKNN', 'rknn', '.rknn']
             # ['TorchScript', 'torchscript', '.torchscript', True],
             # ['TensorRT', 'engine', '.engine', True],
             # ['CoreML', 'coreml', '.mlmodel', False],
@@ -43,14 +47,15 @@ def export_formats():
 
 
 
-def export_onnx(model, im, file, opset, train, dynamic, simplify, prefix=colorstr('ONNX:')):
+def export_onnx(model, im, file, opset, train, dynamic, simplify, save_dir, prefix=colorstr('ONNX:')):
     # YOLOv5 ONNX export
     try:
         check_requirements(('onnx',))
         import onnx
 
         LOGGER.info(f'\n{prefix} starting export with onnx {onnx.__version__}...')
-        f = file.with_suffix('.onnx')
+        # f = file.with_suffix('.onnx')
+        f = save_dir / (file.with_suffix('.onnx').name)
 
         torch.onnx.export(
             model.cpu() if dynamic else model,  # --dynamic only compatible with cpu
@@ -104,39 +109,130 @@ def export_onnx(model, im, file, opset, train, dynamic, simplify, prefix=colorst
 
 
 
+# export rknn & onnx
+def export_rknn(file,
+                calibration,   # images path.txt  or dir
+                keep_onnx=True,
+                save_dir='',
+                prefix=colorstr('RKNN:')
+                ):
+
+    try:
+        from rknn.api import RKNN
+        # LOGGER.info(f'\n{prefix} starting export with rknn {rknn.__version__}...')
+
+        # check onnx file is exist
+        assert Path(file).suffix == '.onnx' and Path(file).exists(), "[RKNN CONVERT ERROR] to convert rknn model must using ONNX file."
+
+        # rknn qnt calibration
+        qnt_cali_file = None   # qnt cali file(.txt)
+        if calibration and Path(calibration).exists():
+            if Path(calibration).is_file():  # for txt file
+                qnt_cali_file = calibration
+                LOGGER.info(f"{colorstr('RKNN QNT calibration with file:')} {Path(calibration).resolve()}")
+            elif Path(calibration).is_dir():  # for image directory
+                qnt_cali_file = '.cali.txt'   # create invisiable temp file
+
+                # delete cali txt if already has one
+                if Path(qnt_cali_file).exists() and Path(qnt_cali_file).is_file():
+                    Path(qnt_cali_file).unlink()
+
+                # save images path to qnt_cali_file(.cali.txt)
+                image_list = [str(x.resolve()) for x in Path(calibration).iterdir() if x.suffix.lower() in ('.png', '.jpg', '.jpeg')]
+                for p in tqdm(image_list, ncols=100, desc=colorstr('Generating RKNN QNT calibration file')):
+                    with open(qnt_cali_file, 'a') as f_temp:
+                        f_temp.write(p + '\n')
+                LOGGER.info(f"{colorstr('RKNN QNT calibration with directory:')} {Path(calibration).resolve()}")
+
+        else:
+            LOGGER.info(f"{colorstr('b', 'magenta', 'NO RKNN QNT calibration file!')}")
+
+
+        # TODO: cali txt check, make sure all images can be used when do qnt(e.g. chinese path name. wrong suffix, decreapte format, ...)
+        # cali_file_check()
+
+
+        # load rknn & config
+        rknn = RKNN(verbose=True)
+        rknn.config(channel_mean_value='0 0 0 255',   # 123.675 116.28 103.53 58.395 # 0 0 0 255 # 
+                    reorder_channel='0 1 2',          # '0 1 2' '2 1 0'
+                    batch_size=1,
+                    epochs=-1,
+                    quantized_dtype='asymmetric_quantized-u8', 
+                    optimization_level=3,
+                    # target_platform=['rk3399pro'],    # 不写则默认是['rk1808'],生成的可以在 RK1806、RK1808 和 RK3399Pro 平台上运行
+                    )
+
+        # load onnx
+        ret = rknn.load_onnx(file)
+        if ret != 0:
+            LOGGER.info(f'\nLoad yolo ONNX failed! Ret = {ret}.')
+            exit(ret)
+
+        # rknn build
+        ret = rknn.build(do_quantization=True if qnt_cali_file else False,
+                         dataset=qnt_cali_file,
+                         pre_compile=False)
+        if ret != 0:
+            LOGGER.info(f'\nRKNN build failed! Ret = {ret}.')
+            exit(ret)
+        
+        # export rknn model
+        f = file.with_suffix('.rknn')
+        ret = rknn.export_rknn(f)
+        if ret != 0:
+            LOGGER.info(f'\nExport rknn model failed! Ret = {ret}.')
+
+        # delete invisiable qnt temp file
+        if qnt_cali_file and Path(qnt_cali_file).name[0] == '.':
+            Path(qnt_cali_file).unlink()
+
+
+        # delete onnx file
+        if not keep_onnx:
+            file.unlink()
+
+        return f
+
+    except Exception as e:
+        LOGGER.info(f'{prefix} export failure: {e}')
+    
+
+
+
 @torch.no_grad()
 def run(
-        data=ROOT / 'data/coco128.yaml',  # 'dataset.yaml path'
-        weights=ROOT / 'yolov5s.pt',  # weights path
+        weights='',  # weights path
         imgsz=(640, 640),  # image (height, width)
         batch_size=1,  # batch size
         device='cpu',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        include=('torchscript', 'onnx'),  # include formats
+        include=(''),  # include formats
         half=False,  # FP16 half-precision export
         inplace=False,  # set YOLOv5 Detect() inplace=True
         train=False,  # model.train() mode
-        keras=False,  # use Keras
-        optimize=False,  # TorchScript: optimize for mobile
-        int8=False,  # CoreML/TF INT8 quantization
         dynamic=False,  # ONNX/TF: dynamic axes
         simplify=False,  # ONNX: simplify model
-        opset=12,  # ONNX: opset version
-        verbose=False,  # TensorRT: verbose log
-        workspace=4,  # TensorRT: workspace size (GB)
-        nms=False,  # TF: add NMS to model
-        agnostic_nms=False,  # TF: add agnostic NMS to model
-        topk_per_class=100,  # TF.js NMS: topk per class to keep
-        topk_all=100,  # TF.js NMS: topk for all classes to keep
-        iou_thres=0.45,  # TF.js NMS: IoU threshold
-        conf_thres=0.25,  # TF.js NMS: confidence threshold
+        opset=11,  # ONNX: opset version
+        project=ROOT / 'runs/export',  # save results to project/name
+        name='exp',  # save results to project/name
+        exist_ok=False,  # existing project/name ok, do not increment
+        cali='',
 ):
+
+
+    # save dirs
+    save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
+    save_dir.mkdir(parents=True, exist_ok=True)  # make dir
+
     t = time.time()
     include = [x.lower() for x in include]  # to lowercase
     fmts = tuple(export_formats()['Argument'][1:])  # --include arguments
     flags = [x in include for x in fmts]
     assert sum(flags) == len(include), f'ERROR: Invalid --include {include}, valid --include arguments are {fmts}'
-    # jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs = flags  # export booleans
-    onnx = flags  # export booleans
+
+
+    # add new type here
+    onnx, rknn = flags  # export booleans
     file = Path(url2file(weights) if str(weights).startswith(('http:/', 'https:/')) else weights)  # PyTorch weights
 
     # Load PyTorch model
@@ -159,15 +255,33 @@ def run(
 
     # Update model
     model.train() if train else model.eval()  # training mode = no Detect() layer grid construction
-    for k, m in model.named_modules():
-        # if isinstance(m, Detect):
-        #     m.inplace = inplace
-        #     m.onnx_dynamic = dynamic
-        #     m.export = True
-        pass
 
+    # manipulate modules
+    for k, m in model.named_modules():
+
+        # SPPF optimizer for rknn export
+        if rknn:    
+            # rknn 1.6 not support SiLU operator
+            if isinstance(m, Conv):  # assign export-friendly activations
+                if isinstance(m.act, nn.SiLU):
+                    m.act = SiLU() 
+
+            # optimized [5,9,13] 5x5 maxpool in SPPF() ==> two 3x3 size
+            if isinstance(m, SPPF):
+                m.m = nn.Sequential(*[nn.MaxPool2d(kernel_size=3, stride=1, padding=1) for i in range(2)])
+
+        # Detect layer
+        if isinstance(m, DetectX):
+            m.inplace = inplace
+            if rknn:    # rknn mode
+                m.export_raw = True
+            else:   # normal mode
+                m.export = True
+
+
+    # dry runs
     for _ in range(2):
-        y = model(im)  # dry runs
+        y = model(im)  
 
     # if half and not coreml:
     if half:
@@ -176,30 +290,37 @@ def run(
     LOGGER.info(f"\n{colorstr('PyTorch:')} starting from {file} with output shape {shape} ({file_size(file):.1f} MB)")
 
     # Exports
-    # f = [''] * 10  # exported filenames
     f = [''] * len(list(export_formats().Suffix))  # exported filenames
     warnings.filterwarnings(action='ignore', category=torch.jit.TracerWarning)  # suppress TracerWarning
     
     # if onnx or xml:  # OpenVINO requires ONNX
     if onnx:  # OpenVINO requires ONNX
-        f[0] = export_onnx(model, im, file, opset, train, dynamic, simplify)
-
+        f[0] = export_onnx(model, im, file, opset, train, dynamic, simplify, save_dir)
+    if rknn:
+        f[1] = export_rknn(file=export_onnx(model, im, file, opset, train, dynamic, simplify, save_dir),    # onnx
+                            calibration=cali, 
+                            keep_onnx=True,
+                            save_dir='',
+                            prefix=colorstr('RKNN:')
+                            )
 
     # Finish
     f = [str(x) for x in f if x]  # filter out '' and None
     if any(f):
         LOGGER.info(f'\nExport complete ({time.time() - t:.2f}s)'
-                    f"\nResults saved to {colorstr('bold', file.parent.resolve())}"
-                    f"\nDetect:          python detect.py --weights {f[-1]}"
-                    f"\nPyTorch Hub:     model = torch.hub.load('ultralytics/yolov5', 'custom', '{f[-1]}')"
-                    f"\nValidate:        python val.py --weights {f[-1]}"
+                    f"\nResults saved to {colorstr('bold', save_dir.resolve())}"
+                    f"\nDetect:          python detect.py --weights {f} (not support RKNN for now)"
+                    # f"\nPyTorch Hub:     model = torch.hub.load('ultralytics/yolov5', 'custom', '{f[-1]}')"
+                    f"\nValidate:        python val.py --weights {f} (not support RKNN for now)"
                     f"\nVisualize:       https://netron.app")
     return f  # return list of exported files/dirs
 
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
+    parser.add_argument('--project', default=ROOT / 'runs/export', help='save to project/name')
+    parser.add_argument('--name', default='exp', help='save to project/name')
+    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640, 640], help='image (h, w)')
     parser.add_argument('--batch-size', type=int, default=1, help='batch size')
@@ -209,8 +330,10 @@ def parse_opt():
     parser.add_argument('--train', action='store_true', help='model.train() mode')
     parser.add_argument('--dynamic', action='store_true', help='ONNX/TF: dynamic axes')
     parser.add_argument('--simplify', action='store_true', help='ONNX: simplify model')
-    parser.add_argument('--opset', type=int, default=12, help='ONNX: opset version')
-    parser.add_argument('--include', nargs='+', default=['onnx'], help='only onnx for now')
+    parser.add_argument('--opset', type=int, default=11, help='ONNX: opset version')
+    parser.add_argument('--include', nargs='+', default=[''], help='onnx, rknn')
+    parser.add_argument('--cali', type=str, default='', help='do rknn qnt calibration')  
+
     opt = parser.parse_args()
     print_args(vars(opt))
     return opt

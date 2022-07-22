@@ -374,11 +374,11 @@ class DetectX(nn.Module):
     # Anchor free Detect Layer
     stride = None  # strides computed during build
     export = False  # export mode
+    export_raw = False  # export raw mode
 
     def __init__(self, nc=80, nk=0, ch=(), inplace=True):  # detection layer
         super().__init__()
         # CONSOLE.log(log_locals=True)      # local variables
-
         self.nc = nc        # number of classes
         self.nk = nk        # number of keypoints
         self.nb = nc + 5    # number of detection box
@@ -401,15 +401,20 @@ class DetectX(nn.Module):
 
     def forward(self, x):
         z = []  # inference output
+        if self.export_raw:  # export raw outputs vector
+            x_raw = []    
 
         for i in range(self.nl):
-            # x[i] = self.m[i](x[i])
 
             # det
             if self.nk == 0:
                 x[i] = self.m[i](x[i])
             else:   # keypoints 
                 x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
+
+            # export raw mode 
+            if self.export_raw:
+                x_raw.append(x[i])
 
             # reshape tensor
             bs, _, ny, nx = x[i].shape
@@ -438,12 +443,9 @@ class DetectX(nn.Module):
                     xy = (y[..., 0:2] + self.grid[i]) * self.stride[i]  # xy
                     wh = torch.exp(y[..., 2:4]) * self.stride[i]  # wh
                     y = torch.cat((xy, wh, y[..., 4:]), -1)
-
                 z.append(y.view(bs, -1, self.no))
 
-
-        return x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)  # x not do sigmoid(), while z did
-
+        return x_raw if self.export_raw else x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)  # x not do sigmoid(), while z did
 
 
 class DetectMultiBackend(nn.Module):
@@ -461,7 +463,7 @@ class DetectMultiBackend(nn.Module):
 
         w = str(weights[0] if isinstance(weights, list) else weights)
         # pt, jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs = self.model_type(w)  # get backend
-        pt, onnx = self.model_type(w)  # get backend
+        pt, onnx, rknn = self.model_type(w)  # get backend
 
         # w = attempt_download(w)  # download if not local
         # fp16 &= (pt or jit or onnx or engine) and device.type != 'cpu'  # FP16
@@ -535,8 +537,8 @@ class DetectMultiBackend(nn.Module):
         check_suffix(p, suffixes)  # checks
         p = Path(p).name  # eliminate trailing separators
         # pt, jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, xml2 = (s in p for s in suffixes)
-        pt, onnx = (s in p for s in suffixes)
-        return pt, onnx
+        pt, onnx, rknn = (s in p for s in suffixes)
+        return pt, onnx, rknn
 
     @staticmethod
     def _load_metadata(f='path/to/meta.yaml'):

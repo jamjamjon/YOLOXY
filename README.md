@@ -1,4 +1,4 @@
-# YOLOX-BETA
+# YOLOX-BETA:
 To be continued...
 
 
@@ -25,9 +25,19 @@ To be continued...
 
 
 
+### onnx export
+python export.py  --weights weights/best.pt --img 640 --simplify  --include onnx
+
+
+### RKNN export
+python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn --cali data/images/
+
+
+### RKNN CPP Deploy 
+	-> ./deploy/RKNN
+
 
 ### TODO List
-	
 	[x] C3xESE block
 	[x] fused decoupled head
 	[x] sa block -> increse 0.8% map in xs model =====> to test(speed)
@@ -36,18 +46,20 @@ To be continued...
 	[x] hyps config
 	[x] byte_tracker 
 	[x] remove yolov5 parts
+	[x] rknn export parts
+	[x] rknn QNT calibration file: support dir(recommend), not only cali.txt
+	[x] RKNN C++ deploy code ref
 	[x] pose-estimation(keypoints detection) -> dataloader and model
 
-	[] pose-estimation(keypoints detection) -> head and loss
 	
 	[ing] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
 	[ing] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
-	   
+	  
+	[] RKNN inference in DetectMultiBackend()
+	[] pose-estimation(keypoints detection) -> head and loss
 	[] Mac calculations in model_info()
-	[] rknn export parts when backbone fixed
 	[] ObjectBox
 	[] ATSS +  TOOD
 	[] end to end => NMS
 	[] segmentation
-
