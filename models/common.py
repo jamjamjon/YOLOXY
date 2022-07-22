@@ -335,11 +335,11 @@ class Concat(nn.Module):
 
 class Decouple(nn.Module):
     # Decoupled head
-    def __init__(self, c1, nc=80, na=3, nk=0):  # ch_in, num_classes, num_anchors
+    def __init__(self, c1, nc=80, na=3):  # ch_in, num_classes, num_anchors
         super().__init__()
         self.na = na  # number of anchors
         self.nc = nc  # number of classes
-        self.nk = nk  # number of keypoints   
+        # self.nk = nk  # number of keypoints   
 
         c_ = min(c1, 256)  # min(c1, nc * na)
         # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
@@ -381,22 +381,22 @@ class DetectX(nn.Module):
         # CONSOLE.log(log_locals=True)      # local variables
         self.nc = nc        # number of classes
         self.nk = nk        # number of keypoints
-        self.nb = nc + 5    # number of detection box
-        self.no = self.nb + 3 * self.nk    # number of outputs per anchor,  keypoint: (xi, yi, i_conf)
+        self.no_det = self.nc + 5   # num_outputs of detection box 
+        self.no_kpt = 3 * self.nk   # num_outputs of keypoints 
+        self.no = self.no_det + self.no_kpt    # number of outputs per anchor,  keypoint: (xi, yi, i_conf)
         self.nl = len(ch)  # number of detection layers, => 3
         self.na = self.anchors = 1    # number of anchors 
         self.grid = [torch.zeros(1)] * self.nl    # TODO: init grid 用于保存每层的每个网格的坐标
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
         # Head for detection
-        # self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)            # couple head
-        self.m = nn.ModuleList(Decouple(x, self.nc, self.na, self.nk) for x in ch)          # decouple head
+        # self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)    # couple head
+        self.m = nn.ModuleList(Decouple(x, self.nc, self.na) for x in ch)       # decouple head
 
-        # TODO: head for keypoints
-        # self.task = 'kpts' if self.nk > 0 else 'det'   
+        # Head for keypoints
         if self.nk > 0:
-            LOGGER.info(f"{colorstr(f'Task with keypoints.')} Num_keypoints: {self.nk}")
-            self.m_kpt = nn.ModuleList(nn.Conv2d(x, self.nk * 3 * self.na, 1) for x in ch)
+            LOGGER.info(f"{colorstr(f'Detection with keypoints.')} Num_keypoints: {self.nk}")
+            self.m_kpt = nn.ModuleList(nn.Conv2d(x, self.no_kpt * self.na, 1) for x in ch)
 
 
     def forward(self, x):
@@ -404,10 +404,10 @@ class DetectX(nn.Module):
         if self.export_raw:  # export raw outputs vector
             x_raw = []    
 
-        for i in range(self.nl):
 
-            # det
-            if self.nk == 0:
+        for i in range(self.nl):
+            
+            if self.nk == 0:    # det
                 x[i] = self.m[i](x[i])
             else:   # keypoints 
                 x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
@@ -420,6 +420,12 @@ class DetectX(nn.Module):
             bs, _, ny, nx = x[i].shape
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()   # torch.Size([1, 1, 80, 80, 85])
 
+            # x_det,  x_kpt
+            # if self.nk > 0 :
+            #     x_det = x[i][..., : self.nc + 5]
+            #     x_kpt = x[i][..., self.nc + 5: ]
+
+            # inference
             if not self.training:
                 # make grid
                 if self.grid[i].shape[2:4] != x[i].shape[2:4]:
@@ -432,17 +438,32 @@ class DetectX(nn.Module):
                     self.grid[i] = torch.stack((xv, yv), 2).view(1, self.na, ny, nx, 2).float()
 
 
-                # YOLOX xywh no sigmoid() 
-                y = x[i]
-                y[..., 4:] = y[..., 4:].sigmoid()   
+                y = x[i]    # copy
+
+                # do sigmoid to det
+                y[..., 4: self.nc + 5] = y[..., 4: self.nc + 5].sigmoid()  # det bbox{xywh, cls, conf} => cls, conf ; no xywh
+                
+                # has kpt
+                if self.nk > 0:
+                    y[..., self.nc + 5 + 2::3] = y[..., self.nc + 5 + 2::3].sigmoid()  # kpt{x,y,conf} => conf , no x, y
+
 
                 if self.inplace:
                     y[..., 0:2] = (y[..., 0:2] + self.grid[i].to(y.device)) * self.stride[i].to(y.device)  # xy
                     y[..., 2:4] = torch.exp(y[..., 2:4]) * self.stride[i].to(y.device) # wh
+
+                    # has kpt
+                    if self.nk > 0:
+                        y[..., self.nc + 5::3] = (y[..., self.nc + 5::3] + self.grid[i].repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # xy of kpt
+
                 else:
                     xy = (y[..., 0:2] + self.grid[i]) * self.stride[i]  # xy
                     wh = torch.exp(y[..., 2:4]) * self.stride[i]  # wh
                     y = torch.cat((xy, wh, y[..., 4:]), -1)
+
+                    # TODO: has kpt
+
+
                 z.append(y.view(bs, -1, self.no))
 
         return x_raw if self.export_raw else x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)  # x not do sigmoid(), while z did
