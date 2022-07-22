@@ -55,7 +55,10 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[ing] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
 	[ing] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
-	  
+	
+	[] does L1 loss in OTA matters ?
+	[] yolov7 & yolov7 tiny backbone test
+
 	[] RKNN inference in DetectMultiBackend()
 	[] pose-estimation(keypoints detection) -> head and loss
 	[] Mac calculations in model_info()

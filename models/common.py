@@ -374,7 +374,7 @@ class DetectX(nn.Module):
     # Anchor free Detect Layer
     stride = None  # strides computed during build
     export = False  # export mode
-    export_raw = False  # export raw mode
+    export_raw = False  # export raw mode, for those not support complex operators like ScatterND, GatherND, ... 
 
     def __init__(self, nc=80, nk=0, ch=(), inplace=True):  # detection layer
         super().__init__()
@@ -407,10 +407,10 @@ class DetectX(nn.Module):
 
         for i in range(self.nl):
             
-            if self.nk == 0:    # det
-                x[i] = self.m[i](x[i])
-            else:   # keypoints 
+            if self.nk > 0:    # kpts
                 x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
+            else:    # det
+                x[i] = self.m[i](x[i])
 
             # export raw mode 
             if self.export_raw:
@@ -419,11 +419,6 @@ class DetectX(nn.Module):
             # reshape tensor
             bs, _, ny, nx = x[i].shape
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()   # torch.Size([1, 1, 80, 80, 85])
-
-            # x_det,  x_kpt
-            # if self.nk > 0 :
-            #     x_det = x[i][..., : self.nc + 5]
-            #     x_kpt = x[i][..., self.nc + 5: ]
 
             # inference
             if not self.training:
@@ -438,35 +433,35 @@ class DetectX(nn.Module):
                     self.grid[i] = torch.stack((xv, yv), 2).view(1, self.na, ny, nx, 2).float()
 
 
-                y = x[i]    # copy
+                y = x[i]    # make a copy
 
-                # do sigmoid to det
-                y[..., 4: self.nc + 5] = y[..., 4: self.nc + 5].sigmoid()  # det bbox{xywh, cls, conf} => cls, conf ; no xywh
+                # do sigmoid to det (cls, conf)
+                y[..., 4: self.no_det] = y[..., 4: self.no_det].sigmoid()  # det bbox {xywh, cls, conf}
                 
-                # has kpt
+                # do sigmoid to kpt (conf)
                 if self.nk > 0:
-                    y[..., self.nc + 5 + 2::3] = y[..., self.nc + 5 + 2::3].sigmoid()  # kpt{x,y,conf} => conf , no x, y
+                    y[..., self.no_det + 2::3] = y[..., self.no_det + 2::3].sigmoid()  # kpt {x,y,conf} 
+                    kpt_grid_x = self.grid[i][..., 0]   # grid x
+                    kpt_grid_y = self.grid[i][..., 1]   # grid y
 
-
+                # decode xywh, kpt(optional)
                 if self.inplace:
                     y[..., 0:2] = (y[..., 0:2] + self.grid[i].to(y.device)) * self.stride[i].to(y.device)  # xy
                     y[..., 2:4] = torch.exp(y[..., 2:4]) * self.stride[i].to(y.device) # wh
-
-                    # has kpt
-                    if self.nk > 0:
-                        y[..., self.nc + 5::3] = (y[..., self.nc + 5::3] + self.grid[i].repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # xy of kpt
-
+                    if self.nk > 0:     # has kpt
+                        y[..., self.no_det::3] = (y[..., self.no_det::3] + kpt_grid_x.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # x of kpt
+                        y[..., self.no_det + 1::3] = (y[..., self.no_det::3] + kpt_grid_y.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # y of kpt
                 else:
                     xy = (y[..., 0:2] + self.grid[i]) * self.stride[i]  # xy
                     wh = torch.exp(y[..., 2:4]) * self.stride[i]  # wh
+                    if self.nk > 0:     # has kpt
+                        y[..., self.no_det::3] = (y[..., self.no_det::3] + self.grid[i].repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # xy of kpt
                     y = torch.cat((xy, wh, y[..., 4:]), -1)
-
-                    # TODO: has kpt
-
 
                 z.append(y.view(bs, -1, self.no))
 
         return x_raw if self.export_raw else x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)  # x not do sigmoid(), while z did
+
 
 
 class DetectMultiBackend(nn.Module):

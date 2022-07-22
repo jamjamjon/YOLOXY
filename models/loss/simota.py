@@ -15,6 +15,8 @@ from utils.torch_utils import de_parallel
 from utils.metrics import bbox_iou, pairwise_bbox_iou
 from utils.general import CONSOLE, LOGGER, colorstr
 
+
+
 class ComputeLoss:
     '''
     This func contains SimOTA and siou loss.
@@ -125,6 +127,7 @@ class ComputeLoss:
         lbox_l1 += (self.L1box(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists
         total_loss = self.box_weight * lbox + lobj + lcls + lbox_l1
 
+        # TODO: does L1 loss matters ?
         return total_loss, torch.cat((self.box_weight * lbox, lobj, lcls, lbox_l1)).detach()
 
 
