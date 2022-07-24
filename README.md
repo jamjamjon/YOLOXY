@@ -37,6 +37,10 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	-> ./deploy/RKNN
 
 
+### BUG
+	[] kpt => cuda error.
+
+
 ### TODO List
 	[x] C3xESE block
 	[x] fused decoupled head

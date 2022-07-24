@@ -128,7 +128,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info(f"{colorstr('Transfer Learning: ')}{len(csd)}/{len(model.state_dict())} items from {weights}")  # report
     else:
         model = Model(cfg, ch=3, nc=nc, nk=nk).to(device)  # create
-        LOGGER.info(f"{colorstr('Train From Scratch.')}")  # report
+        LOGGER.info(f"{colorstr('Train From Scratch. Make sure you have a large capacity of dataset')}")  # report
 
     # check AMP
     amp = check_amp(model)  
@@ -285,12 +285,14 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # hyp['box'] *= 3 / nl  # scale to layers
     # hyp['cls'] *= nc / 80 * 3 / nl  # scale to classes and layers
     # hyp['obj'] *= (imgsz / 640) ** 2 * 3 / nl  # scale to image size and layers
-    
     # hyp['label_smoothing'] = opt.label_smoothing  # in compute loss, not used in simota
+
+    # attach var to model
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
     model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
     model.names = names
+    model.nk = nk
 
     # Start training
     t0 = time.time()
@@ -305,7 +307,17 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
 
     # compute_loss 
-    from models.loss.simota import ComputeLoss
+    if nk == 0:
+        from models.loss.simota import ComputeLoss
+
+        mloss = torch.zeros(4, device=device)  # mean losses
+        loss_strs = ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'BOX_L1', 'LABELS', 'SIZE')
+    else:
+        from models.loss.simota_kpt import ComputeLoss
+
+        mloss = torch.zeros(4, device=device)  # mean losses
+        loss_strs = ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'KPT', 'LABELS', 'SIZE')
+
     compute_loss = ComputeLoss(model)  
 
 
@@ -329,14 +341,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             dataset.mosaic = False  # close mosaic
 
         # mloss setting
-        mloss = torch.zeros(4, device=device)  # mean losses
-        LOGGER.info(('\n' + '%10s' * 8) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'L1', 'LABELS', 'SIZE'))
-        # if model.tag.lower() == 'yolox':
-        #     mloss = torch.zeros(4, device=device)  # mean losses
-        #     LOGGER.info(('\n' + '%10s' * 8) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'L1', 'LABELS', 'SIZE'))
-        # elif model.tag.lower() == 'yolov5':
-        #     mloss = torch.zeros(3, device=device)  # mean losses
-        #     LOGGER.info(('\n' + '%10s' * 7) % ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'LABELS', 'SIZE'))
+        # mloss = torch.zeros(4, device=device)  # mean losses
+        LOGGER.info(('\n' + '%10s' * 8) % loss_strs)
 
         # train_loader
         if RANK != -1:
@@ -372,6 +378,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # Forward
             with torch.cuda.amp.autocast(amp):
                 pred = model(imgs)  # forward
+
+
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
@@ -408,7 +416,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         if RANK in {-1, 0}:
             # mAP
             callbacks.run('on_train_epoch_end', epoch=epoch)
-            ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])
+            ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights', 'nk'])     # add kpt
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
                 results, maps, _ = val.run(data_dict,
@@ -420,7 +428,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                            save_dir=save_dir,
                                            plots=False,
                                            callbacks=callbacks,
-                                           compute_loss=None
+                                           compute_loss=None,
                                            )
 
             # Update best mAP
@@ -485,7 +493,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                     verbose=True,
                                     plots=plots,
                                     callbacks=callbacks,
-                                    compute_loss=None
+                                    compute_loss=None,
                                     )  # val best model with plots
                     if is_coco:
                         callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)

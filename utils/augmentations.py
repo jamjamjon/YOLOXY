@@ -33,8 +33,7 @@ class Albumentations:
         except ImportError:  # package not installed, skip
             pass
         except Exception as e:
-            # LOGGER.info(colorstr('albumentations: ') + f'{e}')
-            CONSOLE.print(f'[bold green]albumentations: [/bold green] {e}' )
+            LOGGER.info(colorstr('albumentations: ') + f'{e}')
 
     def __call__(self, im, labels, p=1.0):
         if self.transform and random.random() < p:

@@ -441,14 +441,20 @@ class DetectX(nn.Module):
                 # do sigmoid to kpt (conf)
                 if self.nk > 0:
                     y[..., self.no_det + 2::3] = y[..., self.no_det + 2::3].sigmoid()  # kpt {x,y,conf} 
-                    kpt_grid_x = self.grid[i][..., 0]   # grid x
-                    kpt_grid_y = self.grid[i][..., 1]   # grid y
+                    kpt_grid_x = self.grid[i][..., 0:1]   # grid x
+                    kpt_grid_y = self.grid[i][..., 1:2]   # grid y
 
                 # decode xywh, kpt(optional)
                 if self.inplace:
                     y[..., 0:2] = (y[..., 0:2] + self.grid[i].to(y.device)) * self.stride[i].to(y.device)  # xy
                     y[..., 2:4] = torch.exp(y[..., 2:4]) * self.stride[i].to(y.device) # wh
                     if self.nk > 0:     # has kpt
+                        # print(f'======> y[..., 0:2]: {y[..., 0:2].shape}')
+                        # print(f'======> y[..., self.no_det::3]: {y[..., self.no_det::3].shape}')
+
+                        # print(f'======> kpt_grid_x: {kpt_grid_x.shape}')
+                        # print(f'======> kpt_grid_x.repeat((1,1,1,1, self.nk)): {kpt_grid_x.repeat((1,1,1,1, self.nk)).shape}')
+
                         y[..., self.no_det::3] = (y[..., self.no_det::3] + kpt_grid_x.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # x of kpt
                         y[..., self.no_det + 1::3] = (y[..., self.no_det::3] + kpt_grid_y.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # y of kpt
                 else:

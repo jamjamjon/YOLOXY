@@ -70,10 +70,30 @@ class Loggers():
             'val/box_loss',
             'val/obj_loss',
             'val/cls_loss',  
-            'val/l1_loss',  # val loss
+            'val/kpt_l1_loss',  # val loss
             'x/lr0',
             'x/lr1',
             'x/lr2']  # params
+
+
+        # for yolox keys
+        self.keys_x = [
+            'train/box_loss',
+            'train/obj_loss',
+            'train/cls_loss',  
+            'train/kpt_l1_loss',  # train loss
+            'metrics/precision',
+            'metrics/recall',
+            'metrics/mAP_0.5',
+            'metrics/mAP_0.5:0.95',  # metrics
+            'val/box_loss',
+            'val/obj_loss',
+            'val/cls_loss',  
+            'val/kpt_L1_loss',  # val loss
+            'x/lr0',
+            'x/lr1',
+            'x/lr2']  # params
+
 
         self.best_keys = ['best/epoch', 'best/precision', 'best/recall', 'best/mAP_0.5', 'best/mAP_0.5:0.95']
         for k in LOGGERS:
@@ -183,6 +203,7 @@ class Loggers():
         if self.csv:
             file = self.save_dir / 'results.csv'
             n = len(x) + 1  # number of cols
+
             s = '' if file.exists() else (('%20s,' * n % tuple(['epoch'] + self.keys)).rstrip(',') + '\n')  # add header
             with open(file, 'a') as f:
                 f.write(s + ('%20.5g,' * n % tuple([epoch] + vals)).rstrip(',') + '\n')

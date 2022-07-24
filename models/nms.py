@@ -15,6 +15,7 @@ def non_max_suppression(prediction,
                         multi_label=False,
                         labels=(),
                         max_det=300,
+                        nk=0,
                         ):
     """Non-Maximum Suppression (NMS) on inference results to reject overlapping bounding boxes
 
@@ -23,7 +24,7 @@ def non_max_suppression(prediction,
     """
 
     bs = prediction.shape[0]  # batch size
-    nc = prediction.shape[2] - 5  # number of classes
+    nc = prediction.shape[2] - 5 - 3 * nk # number of classes
     xc = prediction[..., 4] > conf_thres  # candidates
 
     # Checks
@@ -70,8 +71,14 @@ def non_max_suppression(prediction,
             i, j = (x[:, 5:] > conf_thres).nonzero(as_tuple=False).T
             x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)
         else:  # best class only
-            conf, j = x[:, 5:].max(1, keepdim=True)
-            x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
+            
+            if nk == 0:
+                conf, j = x[:, 5:].max(1, keepdim=True)
+                x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
+            else:       # kpt
+                kpts = x[:, 6:]
+                conf, j = x[:, 5:6].max(1, keepdim=True)
+                x = torch.cat((box, conf, j.float(), kpts), 1)[conf.view(-1) > conf_thres]
 
         # Filter by class
         if classes is not None:

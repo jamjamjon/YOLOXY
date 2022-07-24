@@ -118,7 +118,7 @@ def run(
         dt[1] += t3 - t2
 
         # NMS
-        pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
+        pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det, nk=model.nk)
         dt[2] += time_sync() - t3
 
         # Second-stage classifier (optional)
@@ -143,6 +143,10 @@ def run(
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
+
+                # kpt
+                if model.nk > 0:
+                   det[:, 6:] =  scale_coords(im.shape[1:], det[:, 6:], im0.shape, nk=model.nk, step=3)  # native-space pred
 
                  # Tracking
                 if tracking:
@@ -175,7 +179,7 @@ def run(
                                 f.write(('%g ' * len(line)).rstrip() % line + '\n')
                 else:
                     # Write results
-                    for *xyxy, conf, cls in reversed(det):
+                    for idx, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
                         if save_txt:  # Write to file
                             xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                             line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
@@ -185,7 +189,11 @@ def run(
                         if save_img or save_crop or view_img:  # Add bbox to image
                             c = int(cls)  # integer class
                             label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
-                            annotator.box_label(xyxy, label, color=colors(c, True))
+                            # annotator.box_label(xyxy, label, color=colors(c, True))
+
+                            kpts = det[idx, 6:]
+                            annotator.box_label(xyxy, label, color=colors(c, True), kpts=kpts, nk=model.nk)
+
                         if save_crop:
                             save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
 

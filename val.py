@@ -39,7 +39,7 @@ def save_one_txt(predn, save_conf, shape, file):
             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
 
-def save_one_json(predn, jdict, path, class_map):
+def save_one_json(predn, jdict, path, class_map, nk=0):
     # Save one JSON result {"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}
     image_id = int(path.stem) if path.stem.isnumeric() else path.stem
     box = xyxy2xywh(predn[:, :4])  # xywh
@@ -50,6 +50,12 @@ def save_one_json(predn, jdict, path, class_map):
             'category_id': class_map[int(p[5])],
             'bbox': [round(x, 3) for x in b],
             'score': round(p[4], 5)})
+
+        # kpt
+        if nk > 0:
+            key_point = p[6:]
+            jdict.update({'keypoints': key_point})
+
 
 
 def process_batch(detections, labels, iouv):
@@ -106,9 +112,11 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        # TODO: flip-test of keypoints
 ):
     # Initialize/load model and set device
     training = model is not None
+
 
     if training:  # called by train.py
         device, pt, jit, engine = next(model.parameters()).device, True, False, False  # get model device, PyTorch model
@@ -164,7 +172,9 @@ def run(
                                        pad=pad,
                                        rect=rect,
                                        workers=workers,
-                                       prefix=colorstr(f'{task}: '))[0]
+                                       prefix=colorstr(f'{task}: '),
+                                       nk=model.nk      # kpt
+                                       )[0]
 
 
     seen = 0
@@ -198,17 +208,28 @@ def run(
 
         # Inference
         out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
+        
+        # kpt
+        out = out[...,:6] if model.nk <= 0 else out
+        targets = targets[..., :6] if model.nk <= 0 else targets
+
         dt[1] += time_sync() - t2
 
         # Loss
         if compute_loss:
-            loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
+            # loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
+            loss += compute_loss([x.float() for x in train_out], targets)[1][:3]  # box, obj, cls
 
         # NMS
-        targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
+        if model.nk > 0:
+            num_points = (targets.shape[1] // 2 - 1)
+            targets[:, 2:] *= torch.Tensor([width, height] * num_points).to(device)  # to pixels
+
+        else:
+            targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
-        out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls)
+        out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls, nk=model.nk)
         dt[2] += time_sync() - t3
 
         # Metrics
@@ -229,11 +250,20 @@ def run(
                 pred[:, 5] = 0
             predn = pred.clone()
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
+            if model.nk > 0:
+                scale_coords(im[si].shape[1:], predn[:, 6:], shape, shapes[si][1], nk=model.nk, step=3)  # native-space pred
 
             # Evaluate
             if nl:
                 tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
                 scale_coords(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
+
+                # kpt
+                if model.nk > 0:
+                    tkpt = labels[:, 5:]
+                    scale_coords(im[si].shape[1:], tkpt, shape, shapes[si][1], nk=model.nk)  # native-space labels
+
+
                 labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
                 correct = process_batch(predn, labelsn, iouv)
                 if plots:
@@ -244,14 +274,14 @@ def run(
             if save_txt:
                 save_one_txt(predn, save_conf, shape, file=save_dir / 'labels' / (path.stem + '.txt'))
             if save_json:
-                save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
+                save_one_json(predn, jdict, path, class_map, model.nk)  # append to COCO-JSON dictionary
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
         # Plot images
         # TODO: callbacks.run('on_val_batch_start', ni, imgs, targets, paths, plots, nk, 10)  # plot batch images
         if plots and batch_i < 10:
-            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, nk=nk)  # labels
-            plot_images(im, output_to_target(out), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=nk)  # pred
+            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, nk=model.nk)  # labels
+            plot_images(im, output_to_target(out), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=model.nk)  # pred
 
         callbacks.run('on_val_batch_end')
 
