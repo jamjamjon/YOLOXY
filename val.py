@@ -379,7 +379,7 @@ def parse_opt():
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.save_txt |= opt.save_hybrid
-    print_args(vars(opt))
+    # print_args(vars(opt))
     return opt
 
 

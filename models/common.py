@@ -436,7 +436,9 @@ class DetectX(nn.Module):
                 y = x[i]    # make a copy
 
                 # do sigmoid to det (cls, conf)
-                y[..., 4: self.no_det] = y[..., 4: self.no_det].sigmoid()  # det bbox {xywh, cls, conf}
+                # self.no_det = self.nc + 5
+                y[..., 4: self.nc + 5] = y[..., 4: self.nc + 5].sigmoid()  # det bbox {xywh, cls, conf}
+                # y[..., 4: self.no_det] = y[..., 4: self.no_det].sigmoid()  # det bbox {xywh, cls, conf}
                 
                 # do sigmoid to kpt (conf)
                 if self.nk > 0:
@@ -472,7 +474,7 @@ class DetectX(nn.Module):
 
 class DetectMultiBackend(nn.Module):
     # YOLOv5 MultiBackend class for python inference on various backends
-    def __init__(self, weights='yolov5s.pt', device=torch.device('cpu'), dnn=False, data=None, fp16=False):
+    def __init__(self, weights='', device=torch.device('cpu'), dnn=False, data=None, fp16=False):
         # Usage:
         #   PyTorch:              weights = *.pt
         #   ONNX Runtime:                   *.onnx

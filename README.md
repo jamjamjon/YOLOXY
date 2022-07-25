@@ -63,6 +63,8 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[] does L1 loss in OTA matters ?
 	[] yolov7 & yolov7 tiny backbone test
 
+
+	[] OC_tracker with kpt
 	[] RKNN inference in DetectMultiBackend()
 	[] pose-estimation(keypoints detection) -> head and loss
 	[] Mac calculations in model_info()

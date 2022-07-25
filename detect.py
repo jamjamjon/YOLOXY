@@ -150,17 +150,18 @@ def run(
 
                  # Tracking
                 if tracking:
-                    online_targets = tracker.update(det)    # det.shape [?, 6]: xyxy, conf, cls
+                    det_box = det[:, :6]
+                    online_targets = tracker.update(det_box)    # only box
 
                 # Print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
+                for c in det[:, 5].unique():   # xyxy, conf, cls, kpt[optional]
+                    n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
 
                 # Tracking
                 if tracking:
-                    online_targets = tracker.update(det)    # det.shape [?, 6]: xyxy, conf, cls
+                    online_targets = tracker.update(det_box)    # det.shape [?, 6]: xyxy, conf, cls
 
                     # Deal with results
                     for t in online_targets:
@@ -287,7 +288,8 @@ def parse_opt():
 
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
-    print_args(vars(opt))
+    # print_args(vars(opt))
+    
     return opt
 
 

@@ -51,9 +51,9 @@ WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
 
 
 def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
-    save_dir, epochs, batch_size, weights, single_cls, data, cfg, resume, noval, nosave, workers, freeze, mission = \
+    save_dir, epochs, batch_size, weights, single_cls, data, cfg, resume, noval, nosave, workers, freeze = \
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.data, opt.cfg, \
-        opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze, opt.mission
+        opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze
     callbacks.run('on_pretrain_routine_start')
 
     # Directories
@@ -184,7 +184,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']
     else:
         lf = lambda x: (1 - x / epochs) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
-    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)  # plot_lr_scheduler(optimizer, scheduler, epochs)
+    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)  
+    plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # EMA
     ema = ModelEMA(model) if RANK in {-1, 0} else None
@@ -336,7 +337,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
 
         # close mosaic in the last 5% epochs
-        if (epoch == int(epochs * 0.95)) and (epoch >= 20):   # at least train 50 epochs 
+        if (epoch == int(epochs * 0.9)) and (epoch >= 20):   # at least train 50 epochs 
             LOGGER.info(f"{colorstr('> Mosaic augmentation closed.')}")
             dataset.mosaic = False  # close mosaic
 
@@ -546,7 +547,7 @@ def parse_opt(known=False):
     parser.add_argument('--artifact_alias', type=str, default='latest', help='W&B: Version of dataset artifact to use')
 
     # mission option
-    parser.add_argument('--mission', type=str, choices=['det', 'seg', 'kpt'], default='det', help='mission')
+    # parser.add_argument('--mission', type=str, choices=['det', 'seg', 'kpt'], default='det', help='mission')
 
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
@@ -556,7 +557,7 @@ def parse_opt(known=False):
 def main(opt, callbacks=Callbacks()):
     # Checks
     if RANK in {-1, 0}:
-        print_args(vars(opt))
+        # print_args(vars(opt))
         check_requirements(exclude=['thop'])
 
     # Resume

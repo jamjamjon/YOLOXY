@@ -340,7 +340,7 @@ if __name__ == '__main__':
     parser.add_argument('--output', action='store_true', help='show output shape')
     opt = parser.parse_args()
     opt.cfg = check_yaml(opt.cfg)  # check YAML
-    print_args(vars(opt))
+    # print_args(vars(opt))
 
     device = select_device(opt.device)   # device
     im = torch.rand(opt.batch_size, 3, opt.imgsz, opt.imgsz).to(device)     # dummpy input

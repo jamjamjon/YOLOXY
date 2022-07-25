@@ -550,7 +550,7 @@ def check_amp(model):
     f = ROOT / 'data' / 'images' / 'bus.jpg'  # image to check
     im = f if f.exists() else 'https://ultralytics.com/images/bus.jpg' if check_online() else np.ones((640, 640, 3))
     try:
-        assert amp_allclose(model, im) or amp_allclose(DetectMultiBackend('yolov5n.pt', device), im)
+        assert amp_allclose(model, im) or amp_allclose(DetectMultiBackend('', device), im)
         LOGGER.info(emojis(f'{prefix} ✅'))
         return True
     except Exception:
@@ -807,17 +807,17 @@ def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None, nk=0, step=2):
         gain = ratio_pad[0][0]
         pad = ratio_pad[1]
 
-        if nk == 0:
-            coords[:, [0, 2]] -= pad[0]  # x padding
-            coords[:, [1, 3]] -= pad[1]  # y padding
-            coords[:, :4] /= gain
-            clip_coords(coords, img0_shape)
-        else:   # kpt
-            coords[:, 0::step] -= pad[0]  # x padding
-            coords[:, 1::step] -= pad[1]  # y padding
-            coords[:, 0::step] /= gain
-            coords[:, 1::step] /= gain
-            clip_coords(coords, img0_shape, step=step)
+    if nk == 0:  # det
+        coords[:, [0, 2]] -= pad[0]  # x padding
+        coords[:, [1, 3]] -= pad[1]  # y padding
+        coords[:, :4] /= gain
+        clip_coords(coords, img0_shape)
+    else:   # kpt
+        coords[:, 0::step] -= pad[0]  # x padding
+        coords[:, 1::step] -= pad[1]  # y padding
+        coords[:, 0::step] /= gain
+        coords[:, 1::step] /= gain
+        clip_coords(coords, img0_shape, step=step)
 
     return coords
 
