@@ -82,6 +82,8 @@ class Annotator:
 
     def box_label(self, box, label='', color=(128, 128, 128), txt_color=(255, 255, 255), nk=0, kpts=None):
 
+        kpt_thresh = 0.5
+
         # Add one xyxy box to image with label
         if self.pil or not is_ascii(label):
             self.draw.rectangle(box, width=self.lw, outline=color)  # box
@@ -113,7 +115,7 @@ class Annotator:
                         if not (x % w_ == 0 or y % h_ == 0):
                             if step == 3:   # when det
                                 conf = kpts[step * idx + 2]
-                                if conf < 0.5:   # filter kpt which conf < 0.5
+                                if conf < kpt_thresh:   # filter kpt which conf < 0.5
                                     continue
                             r_ = max(5, self.lw)  # radius
                             self.draw.ellipse((x-r_, y-r_, x+r_, y+r_), 'yellow', 'green', width=2)
@@ -128,7 +130,7 @@ class Annotator:
                         if step == 3:
                             conf1 = kpts[(kpt_pair[0] - 1) * step + 2]
                             conf2 = kpts[(kpt_pair[1] - 1) * step + 2]
-                            if conf1 < 0.5 or conf2 < 0.5:
+                            if conf1 < kpt_thresh or conf2 < kpt_thresh:
                                 continue
 
                         # filter outliers
@@ -158,7 +160,50 @@ class Annotator:
                             thickness=tf,
                             lineType=cv2.LINE_AA)
 
-            # TODO: draw keypoints parts
+                # draw keypoints
+                if kpts is not None and nk > 0:
+                    
+                    skeleton_pair = [[16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12],
+                                    [7, 13], [6, 7], [6, 8], [7, 9], [8, 10], [9, 11], [2, 3],
+                                    [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]]
+
+                    # draw circle
+                    step = len(kpts) // nk
+                    w_, h_ = self.im.shape[0], self.im.shape[1]  # 
+
+                    # iter kpts
+                    for idx in range(nk):
+                        x, y = kpts[step * idx], kpts[step * idx + 1]
+                        if not (x % w_ == 0 or y % h_ == 0):
+                            if step == 3:   # when det
+                                conf = kpts[step * idx + 2]
+                                if conf < kpt_thresh:   # filter kpt which conf < 0.5
+                                    continue
+                            r_ = max(4, self.lw)  # radius
+                            cv2.circle(self.im, (int(x), int(y)), int(r_), (0, 255, 255), -1)
+
+                    # draw connection
+                    for idx, kpt_pair in enumerate(skeleton_pair):
+
+                        p1 = (int(kpts[(kpt_pair[0] - 1) * step]), int(kpts[(kpt_pair[0] - 1) * step + 1]))
+                        p2 = (int(kpts[(kpt_pair[1] - 1) * step]), int(kpts[(kpt_pair[1] - 1) * step + 1]))
+                        
+                        # has conf when detection
+                        if step == 3:
+                            conf1 = kpts[(kpt_pair[0] - 1) * step + 2]
+                            conf2 = kpts[(kpt_pair[1] - 1) * step + 2]
+                            if conf1 < kpt_thresh or conf2 < kpt_thresh:
+                                continue
+
+                        # filter outliers
+                        if p1[0] % w_ == 0 or p1[1] % h_ == 0 or p1[0] < 0 or p1[1] < 0:
+                            continue
+                        if p2[0] % w_ == 0 or p2[1] % h_ == 0 or p2[0] < 0 or p2[1] < 0:
+                            continue
+
+                        r_ = min(2, self.lw)  # radius
+                        cv2.line(self.im, p1, p2, (0, 255, 0), thickness=r_) 
+
 
 
 

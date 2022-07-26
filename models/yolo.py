@@ -53,13 +53,13 @@ class Model(nn.Module):
 
         # num of classes
         if nc and nc != self.yaml['nc']:
-            LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
+            LOGGER.info(f"{colorstr(f'Overriding model.yaml') } nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
 
 
         # num of keypoints
         if nk and nk != self.yaml.get('nk', 0):
-            LOGGER.info(f"Overriding model.yaml nk={self.yaml.get('nk', 0)} with nk={nk}")
+            LOGGER.info(f"{colorstr(f'Overriding model.yaml')} nk={self.yaml.get('nk', 0)} with nk={nk}")
             self.yaml.update({'nk': nk})  # override yaml value
 
         # parse model

@@ -10,6 +10,7 @@ To be continued...
 |nano-rep-half-head(baseline branch)     |640 |300, 316  |**30.2**, **30.4**   | 58.7   |44.4  |1.83    |4.4 | 6.0
 |yolov5s-silu(v6.1) 	|640 | 300  |37.4 | | |**7.23** |**16.53** |**7.7** 
 |s-crossconv-head-RepConv(v5x branch) 	|640 | 300| **39.2** | |    |7.9  |17.0	|9.6
+|xs-Conv-ciou 								|640 |38.6(300) 39.3(370)    |7.6  |17.9	|
 
 
 ## First priority: get baseline mAP
@@ -17,7 +18,7 @@ To be continued...
 |---|---|---|---|---|---
 |yolov5s-silu(v6.1) 						|640 |37.4 |**7.23** |**16.53** |**7.7** 
 |yoloxs 									|640 |40.5 |**9.0** |**26.8** | - 
-|xs-Conv-ciou 								|640 |38.3(300) 39.1(370)    |7.6  |17.9	|
+|xs-Conv-ciou 								|640 |38.6(300) 39.3(370)    |7.6  |17.9	|
 |xs-Conv-siou 								|640 |ING(no need?)    | 7.6  |17.9	|
 |xs-repConv-AsymConv-siou(3693) 			|640 |ing     | 7.7 |17.9	|
 |xs-repConv-AsymConv-siou(612186) 			|640 |TODO    | 8.4 |20.1|
@@ -72,3 +73,6 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[] ATSS +  TOOD
 	[] end to end => NMS
 	[] segmentation
+
+### about loss gain
+the loss doesn't 'need' anything, but we use these hyperparameter gains to balance loss contributions from each component in proportion to what we believe their importance is to the final solution.

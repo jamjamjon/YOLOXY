@@ -30,21 +30,27 @@ class ComputeLoss:
         self.iou_weight = self.hyp.get('iou_weight', 3.0)   # fixed
         self.cls_weight = self.hyp.get('cls_weight', 1.0)   # fixed
         self.center_radius = self.hyp.get('center_radius', 2.5) # fixed
+
         self.kpt_weight = self.hyp.get('kpt_weight', 0.1)   # TODO
-        self.kptv_weight = self.hyp.get('kpt_weight', 0.5)  # TODO
+        self.kptv_weight = self.hyp.get('kptv_weight', 0.5)  # TODO
 
         self.ng = 0   # number of grid in every scale: 80x80 + 40x40 + 20x20
         
         self.head = de_parallel(model).model[-1]  # Detect() module
-        self.nl = self.head.nl
-        self.na = self.head.na
-        self.nc = self.head.nc
-        self.stride = self.head.stride
-        # kpt 
-        self.nk = self.head.nk        # number of keypoints
-        self.no_det = self.head.no_det   # num_outputs of detection box self.nc + 5
-        self.no_kpt = self.head.no_kpt   # num_outputs of keypoints 3 * self.nk
-        self.no = self.head.no    # number of outputs per anchor,  keypoint: (xi, yi, i_conf)  no_det + no_kpt
+        # self.nl = self.head.nl
+        # self.na = self.head.na
+        # self.nc = self.head.nc
+        # self.stride = self.head.stride
+        # # kpt 
+        # self.nk = self.head.nk        # number of keypoints
+        # self.no_det = self.head.no_det   # num_outputs of detection box self.nc + 5
+        # self.no_kpt = self.head.no_kpt   # num_outputs of keypoints 3 * self.nk
+        # self.no = self.head.no    # number of outputs per anchor,  keypoint: (xi, yi, i_conf)  no_det + no_kpt
+
+        # TODO:
+        for x in ('nl', 'na', 'nc', 'stride', 'nk', 'no_det', 'no_kpt', 'no'):
+            setattr(self, x, getattr(self.head, x))
+
 
         # Define criteria
         self.BCEcls = nn.BCEWithLogitsLoss(reduction="none")   # reduction="mean" default, pos_weights=None
@@ -133,8 +139,10 @@ class ComputeLoss:
                 p_objs = pobj[idx]          # pred obj
 
                 # kpt
+                # keypoint: de-scale to origin image size  !!!!
                 if self.nk > 0:
-                    t_kpts = targets[idx, :nt, -2 * self.nk:]  # TODO: rename => t_kpts
+                    imgsz_kpt = torch.Tensor([[input_w, input_h] * self.nk]).type_as(targets)  # [[640, 640, 640, 640]]
+                    t_kpts = targets[idx, :nt, -2 * self.nk:].mul_(imgsz_kpt)  # t_kpts
                 else:
                     t_kpts = None
 
@@ -164,8 +172,6 @@ class ComputeLoss:
             if self.nk > 0:
                 tkpt.append(tkpt_)
 
-
-
         # concat
         tcls = torch.cat(tcls, 0)
         tbox = torch.cat(tbox, 0)
@@ -187,14 +193,20 @@ class ComputeLoss:
 
         # kpt
         if self.nk > 0:
+            
+            # print(f'[pkpt]===>: {pkpt.view(-1, self.no_kpt)[finalists_masks]}')
+            # print(f'[tkpt]===>: {tkpt}')
+
             loss_kpts, loss_kpts_vis = self.kpts_oks_loss(pkpt.view(-1, self.no_kpt)[finalists_masks], tkpt, tbox)
-            lkpt += (self.kpt_weight * loss_kpts.sum() / num_finalists) + (self.kptv_weight *loss_kpts_vis.sum() / num_finalists)
+            # lkpt += (self.kpt_weight * loss_kpts.sum() / num_finalists) + (self.kptv_weight *loss_kpts_vis.sum() / num_finalists)
+            lkpt += (1.0 * loss_kpts.sum() / num_finalists) + (1.0 *loss_kpts_vis.sum() / num_finalists)
         else:
             lkpt = 0
 
 
         # weight loss
-        lbox *= self.box_weight
+        lbox *= self.box_weight    # 5.0
+        lkpt *= 5.0   # TODO 
         total_loss = lbox + lobj + lcls + lbox_l1 + lkpt
 
         # total_loss = torch.nan_to_num(total_loss)
@@ -235,18 +247,12 @@ class ComputeLoss:
             pred[..., :2] = (pred[..., :2] + xy_shift) * self.stride[k]     # xy
             pred[..., 2:4] = torch.exp(pred[..., 2:4]) * self.stride[k]     # wh
 
-
             # kpt
             if self.nk > 0:
                 kpt_conf_grids = torch.zeros_like(xy_shift)[..., 0:1]
                 kpt_grids = torch.cat((xy_shift, kpt_conf_grids), dim = 2).repeat(1, 1, self.nk)
-
-                # print(f'-----------> kpt_grids: {kpt_grids.shape}')
-
                 pred[..., -3 * self.nk:] = (pred[..., -3 * self.nk:] + kpt_grids) * self.stride[k]
-                # pred[..., self.det:] = (pred[..., self.det:] + kpt_grids) * stride
-
-
+            
             # ------------------------------------------------------------------
 
             # stride between grid 

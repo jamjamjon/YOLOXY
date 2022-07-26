@@ -40,7 +40,7 @@ from utils.general import (LOGGER, check_amp, check_dataset, check_file, check_g
 from utils.loggers import Loggers
 from utils.loggers.wandb.wandb_utils import check_wandb_resume
 from utils.metrics import fitness
-from utils.plots import plot_labels, plot_images
+from utils.plots import plot_labels, plot_images, plot_lr_scheduler
 from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, torch_distributed_zero_first, 
                                 smart_DDP)
 
@@ -185,7 +185,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     else:
         lf = lambda x: (1 - x / epochs) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)  
-    plot_lr_scheduler(optimizer, scheduler, epochs)
+    # plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # EMA
     ema = ModelEMA(model) if RANK in {-1, 0} else None
@@ -306,25 +306,27 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     scaler = torch.cuda.amp.GradScaler(enabled=amp)
     stopper, stop = EarlyStopping(patience=opt.patience), False
 
-
     # compute_loss 
     if nk == 0:
         from models.loss.simota import ComputeLoss
 
-        mloss = torch.zeros(4, device=device)  # mean losses
-        loss_strs = ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'BOX_L1', 'LABELS', 'SIZE')
+        # mloss = torch.zeros(4, device=device)  # mean losses
+        # loss_strs = ('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS', 'OTHER')
+        task_loss = ('BOX_L1',)
+
     else:
         from models.loss.simota_kpt import ComputeLoss
 
-        mloss = torch.zeros(4, device=device)  # mean losses
-        loss_strs = ('EPOCH', 'GPU_MEM', 'BOX', 'OBJ', 'CLS', 'KPT', 'LABELS', 'SIZE')
+        # mloss = torch.zeros(4, device=device)  # mean losses
+        # loss_strs = ('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS', 'KPT')
+        task_loss = ('KPT',)
 
     compute_loss = ComputeLoss(model)  
 
 
     callbacks.run('on_train_start')     # before train
-    LOGGER.info(f"{colorstr('Training settings: ')}{save_dir}\n"
-                    f"{colorstr('Training epochs: ')}{epochs}")
+    LOGGER.info(f"{colorstr('Train Results: ')}{save_dir}\n"
+                f"{colorstr('Train Epochs: ')}{epochs}")
 
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         callbacks.run('on_train_epoch_start')
@@ -342,8 +344,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             dataset.mosaic = False  # close mosaic
 
         # mloss setting
-        # mloss = torch.zeros(4, device=device)  # mean losses
-        LOGGER.info(('\n' + '%10s' * 8) % loss_strs)
+        mloss = torch.zeros(3 + len(task_loss), device=device)  # mean losses
+        LOGGER.info(('\n' + '%10s' * (4 + 3 + len(task_loss))) % (('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS') + task_loss))
+        # LOGGER.info(('\n' + '%10s' * (4 + mloss.shape[0])) % loss_strs)
 
         # train_loader
         if RANK != -1:
@@ -379,9 +382,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # Forward
             with torch.cuda.amp.autocast(amp):
                 pred = model(imgs)  # forward
-
-
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
+
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad:
@@ -404,7 +406,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                 mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 pbar.set_description(('%10s' * 2 + '%10.4g' * (mloss.shape[0] + 2)) %
-                                     (f'{epoch}/{epochs - 1}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
+                                     (f'{epoch}/{epochs - 1}', mem, imgs.shape[-1], targets.shape[0], *mloss))
                 callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots, nk)
                 if callbacks.stop_training:
                     return
@@ -437,6 +439,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             stop = stopper(epoch=epoch, fitness=fi)  # early stop check
             if fi > best_fitness:
                 best_fitness = fi
+
             log_vals = list(mloss) + list(results) + lr
             callbacks.run('on_fit_epoch_end', log_vals, epoch, best_fitness, fi)
 

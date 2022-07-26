@@ -184,7 +184,7 @@ def run(
     s = ('%20s' + '%11s' * 6) % ('CLASS', 'IMAGES', 'LABLES', 'p', 'R', 'mAP@.5', 'mAP@.5:.95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-    # mloss setting
+    # TODO: mloss setting remove loss
     loss = torch.zeros(4, device=device)  # mean losses
     # if model.tag in ('YOLOX', 'yolox'):
     #     loss = torch.zeros(4, device=device)  # mean losses
@@ -210,15 +210,15 @@ def run(
         out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
         
         # kpt
-        out = out[...,:6] if model.nk <= 0 else out
-        targets = targets[..., :6] if model.nk <= 0 else targets
+        # out = out[...,:6] if model.nk == 0 else out
+        # targets = targets[..., :6] if model.nk == 0 else targets
 
         dt[1] += time_sync() - t2
 
         # Loss
+        # TODO: remove loss
         if compute_loss:
-            # loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
-            loss += compute_loss([x.float() for x in train_out], targets)[1][:3]  # box, obj, cls
+            loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
 
         # NMS
         if model.nk > 0:
@@ -349,6 +349,9 @@ def run(
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
+
+    # TODO: remove loss
+    # remove result.csv val_loss parts
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 

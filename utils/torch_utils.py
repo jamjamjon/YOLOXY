@@ -88,8 +88,7 @@ def select_device(device='', batch_size=0, newline=True):
 
     if not newline:
         s = s.rstrip()
-    # LOGGER.info(s.encode().decode('ascii', 'ignore') if platform.system() == 'Windows' else s)  # emoji-safe
-    CONSOLE.print(Panel.fit(f"[bold green]{s.encode().decode('ascii', 'ignore') if platform.system() == 'Windows' else s}"))  # emoji-safe
+    LOGGER.info(s.encode().decode('ascii', 'ignore') if platform.system() == 'Windows' else colorstr(f'{s}'))  # emoji-safe
     
     return torch.device(arg)
 
@@ -246,7 +245,8 @@ def model_info(model, verbose=False, img_size=640):
         fs = ''
 
     name = Path(model.yaml_file).stem.replace('yolov5', 'YOLOv5') if hasattr(model, 'yaml_file') else 'Model'
-    CONSOLE.print(Panel.fit(f"[green b]{name} 👉 {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}"), style="")
+    LOGGER.info(f"{colorstr(f'{name} summary')} 👉 {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
+    # CONSOLE.print(Panel.fit(f"[green b]{name} 👉 {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}"), style="")
 
 
 def scale_img(img, ratio=1.0, same_shape=False, gs=32):  # img(16,3,256,416)

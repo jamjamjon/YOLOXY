@@ -56,13 +56,26 @@ class Loggers():
             'x/lr1',
             'x/lr2']  # params
 
+        # TODO for plain keys
+        # self.keys_xx = [
+        #     'train/box_loss',
+        #     'train/obj_loss',
+        #     'train/cls_loss',  
+        #     'train/other_loss',  # train loss
+        #     'metrics/precision',
+        #     'metrics/recall',
+        #     'metrics/mAP_0.5',
+        #     'metrics/mAP_0.5:0.95',  # metrics
+        #     'x/lr0',
+        #     'x/lr1',
+        #     'x/lr2']  # params
 
-        # for yolox keys
+        # for 4 loss items keys
         self.keys_x = [
             'train/box_loss',
             'train/obj_loss',
             'train/cls_loss',  
-            'train/l1_loss',  # train loss
+            'train/other_loss',  # train loss
             'metrics/precision',
             'metrics/recall',
             'metrics/mAP_0.5',
@@ -70,26 +83,7 @@ class Loggers():
             'val/box_loss',
             'val/obj_loss',
             'val/cls_loss',  
-            'val/kpt_l1_loss',  # val loss
-            'x/lr0',
-            'x/lr1',
-            'x/lr2']  # params
-
-
-        # for yolox keys
-        self.keys_x = [
-            'train/box_loss',
-            'train/obj_loss',
-            'train/cls_loss',  
-            'train/kpt_l1_loss',  # train loss
-            'metrics/precision',
-            'metrics/recall',
-            'metrics/mAP_0.5',
-            'metrics/mAP_0.5:0.95',  # metrics
-            'val/box_loss',
-            'val/obj_loss',
-            'val/cls_loss',  
-            'val/kpt_L1_loss',  # val loss
+            'val/others_loss',  # val loss
             'x/lr0',
             'x/lr1',
             'x/lr2']  # params
@@ -126,11 +120,8 @@ class Loggers():
             self.wandb = WandbLogger(self.opt, run_id)
             # temp warn. because nested artifacts not supported after 0.12.10
             if pkg.parse_version(wandb.__version__) >= pkg.parse_version('0.12.11'):
-                # self.logger.warning(
-                #     "YOLOv5 temporarily requires wandb version 0.12.10 or below. Some features may not work as expected."
-                # )
                 self.logger.log(
-                    "YOLOX-BETA temporarily requires wandb version 0.12.10 or below. Some features may not work as expected."
+                    "YOLO temporarily requires wandb version 0.12.10 or below. Some features may not work as expected."
                 )
         else:
             self.wandb = None
@@ -197,13 +188,11 @@ class Loggers():
         #     self.keys = self.keys
 
         x = dict(zip(self.keys, vals))
-        # x = dict(zip(self.keys, vals))
 
 
         if self.csv:
             file = self.save_dir / 'results.csv'
             n = len(x) + 1  # number of cols
-
             s = '' if file.exists() else (('%20s,' * n % tuple(['epoch'] + self.keys)).rstrip(',') + '\n')  # add header
             with open(file, 'a') as f:
                 f.write(s + ('%20.5g,' * n % tuple([epoch] + vals)).rstrip(',') + '\n')
@@ -232,8 +221,7 @@ class Loggers():
             plot_results(file=self.save_dir / 'results.csv')  # save results.png
         files = ['results.png', 'confusion_matrix.png', *(f'{x}_curve.png' for x in ('F1', 'PR', 'P', 'R'))]
         files = [(self.save_dir / f) for f in files if (self.save_dir / f).exists()]  # filter
-        # self.logger.info(f"Results saved to {colorstr('bold', self.save_dir)}")
-        self.logger.log(f"Results saved to [bold green]{self.save_dir}")
+        self.logger.info(f"Results saved to {colorstr('bold', self.save_dir)}")
 
         if self.tb:
             for f in files:

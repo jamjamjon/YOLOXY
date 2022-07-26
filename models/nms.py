@@ -23,6 +23,9 @@ def non_max_suppression(prediction,
          list of detections, on (n,6) tensor per image [xyxy, conf, cls]
     """
 
+    # print(f'nms: {prediction.shape}')
+    # print(f'nms: {prediction[0][:2][6:]}')
+
     bs = prediction.shape[0]  # batch size
     nc = prediction.shape[2] - 5 - 3 * nk # number of classes
     xc = prediction[..., 4] > conf_thres  # candidates
@@ -61,7 +64,7 @@ def non_max_suppression(prediction,
             continue
 
         # Compute conf
-        x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
+        x[:, 5: 5 + nc] *= x[:, 4:5]  # conf = obj_conf * cls_conf
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
@@ -71,13 +74,12 @@ def non_max_suppression(prediction,
             i, j = (x[:, 5:] > conf_thres).nonzero(as_tuple=False).T
             x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)
         else:  # best class only
-            
             if nk == 0:
                 conf, j = x[:, 5:].max(1, keepdim=True)
                 x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
             else:       # kpt
-                kpts = x[:, 6:]
-                conf, j = x[:, 5:6].max(1, keepdim=True)
+                kpts = x[:, nc + 5:]
+                conf, j = x[:, 5: nc + 5].max(1, keepdim=True)
                 x = torch.cat((box, conf, j.float(), kpts), 1)[conf.view(-1) > conf_thres]
 
         # Filter by class
@@ -113,5 +115,7 @@ def non_max_suppression(prediction,
         if (time.time() - t) > time_limit:
             LOGGER.warning(f'WARNING: NMS time limit {time_limit:.3f}s exceeded')
             break  # time limit exceeded
+
+
 
     return output
