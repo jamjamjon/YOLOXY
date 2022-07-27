@@ -211,8 +211,6 @@ class AsymConv(nn.Module):
                      ] += asym_kernel
 
 
-
-
 class DWConv(Conv):
     # Depth-wise convolution class
     def __init__(self, c1, c2, k=1, s=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
@@ -335,7 +333,7 @@ class Concat(nn.Module):
 
 class Decouple(nn.Module):
     # Decoupled head
-    def __init__(self, c1, nc=80, na=3):  # ch_in, num_classes, num_anchors
+    def __init__(self, c1, nc=80, na=1):  # ch_in, num_classes, num_anchors
         super().__init__()
         self.na = na  # number of anchors
         self.nc = nc  # number of classes
@@ -346,8 +344,6 @@ class Decouple(nn.Module):
         self.a = Conv(c1, c_, 1)        # stem
          
         self.bc = Conv(c_, c_, 3)     # fused b,c brach 
-        # => params(1690815 -> 1626751) GFLOPs(4.5 -> 4.2) when c_ = min(c1 // 2, 256)
-        # => params(2334367 -> 2077215) GFLOPs(7.9 -> 6.5) when c_ = min(c1, 256);
         # self.bc = CrossConv(c_, c_, 3, 1)
 
         self.b1 = nn.Conv2d(c_, na * 4, 1)      # box
@@ -367,6 +363,69 @@ class Decouple(nn.Module):
                           c.view(bs, self.na, self.nc, ny, nx)), 2).view(bs, -1, ny, nx)
 
 
+
+
+class DWCC2(nn.Module):
+    # 3x3dwconv + 1x1conv + 1x1conv2d
+    def __init__(self, c1, c2):
+        super().__init__()
+        
+        self.dwconv = DWConv(c1, c1, 3)
+        self.conv = Conv(c1, c1, 1)
+        self.conv2d = nn.Conv2d(c1, c2, 1)
+
+    def forward(self, x):
+        return self.conv2d(self.conv(self.dwconv(x)))
+        # return self.conv2d(x)
+
+
+class DecoupleH(nn.Module):
+    # Decoupled Hydra head
+    def __init__(self, c1, nc=80, na=1, nk=0, ns=0):  # ch_in, num_classes, num_anchors
+        super().__init__()
+        self.na = na    # number of anchors
+        self.nc = nc    # number of classes
+        self.nk = nk    # number of keypoints
+        self.ns = ns    # number of segments
+
+        c_ = min(c1, 256)  # min(c1, nc * na)
+        # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
+
+        self.cv1 = Conv(c1, c_, 1)    # stem
+        self.cv2 = Conv(c_, c_, 3)    
+
+        # TODO: 1x1conv2d => 3x3dwconv + 1x1conv + 1x1conv2d
+        # self.conv_box = nn.Conv2d(c_, na * 4, 1)      # box
+        # self.conv_obj = nn.Conv2d(c_, na * 1, 1)      # obj  
+        # self.conv_cls = nn.Conv2d(c_, na * nc, 1)      # cls
+        # self.conv_kpt = nn.Conv2d(c_, na * nk, 1)      # kpt
+        
+        # infer time: 0.5ms -> 1.1ms
+        self.conv_box = DWCC2(c_, na * 4)      # box => x,y,w,h
+        self.conv_obj = DWCC2(c_, na * 1)      # obj  
+        self.conv_cls = DWCC2(c_, na * nc)      # cls
+        if self.nk > 0:
+            self.conv_kpt = DWCC2(c_, na * nk * 3)      # kpt => x,y,conf
+        
+
+    def forward(self, x):
+        bs, nc, ny, nx = x.shape  # BCHW
+
+        x = self.cv2(self.cv1(x))
+        x_box = self.conv_box(x)     # box
+        x_obj = self.conv_obj(x)     # obj
+        x_cls = self.conv_cls(x)     # cls
+        if self.nk > 0:
+            x_kpt = self.conv_kpt(x)     # cls
+        
+        # x list
+        xs = [x_obj.view(bs, self.na, 1, ny, nx), 
+              x_box.view(bs, self.na, 4, ny, nx), 
+              x_cls.view(bs, self.na, self.nc, ny, nx)]
+        if self.nk > 0:
+            xs.append(x_kpt.view(bs, self.na, self.nk * 3, ny, nx))
+
+        return torch.cat(xs, 2).view(bs, -1, ny, nx)
 
 
 class DetectX(nn.Module):
@@ -393,6 +452,7 @@ class DetectX(nn.Module):
         self.m = nn.ModuleList(Decouple(x, self.nc, self.na) for x in ch)       # decouple head
 
         # Head for keypoints
+        # TODO: remove, user DecoupleH()
         if self.nk > 0:
             LOGGER.info(f"{colorstr(f'Detection with keypoints.')} Num_keypoints: {self.nk}")
             self.m_kpt = nn.ModuleList(nn.Conv2d(x, self.no_kpt * self.na, 1) for x in ch)
@@ -448,8 +508,6 @@ class DetectX(nn.Module):
                     y[..., 2:4] = torch.exp(y[..., 2:4]) * self.stride[i].to(y.device) # wh
 
                     if self.nk > 0:     # has kpt
-                        # print(f'========>\n{y[..., self.no_det::3]}')
-                        # print(f'========>\n{y[..., self.no_det+1::3]}')
                         #
                         y[..., self.no_det::3] = (y[..., self.no_det::3] + kpt_grid_x.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # x of kpt
                         y[..., self.no_det + 1::3] = (y[..., self.no_det + 1::3] + kpt_grid_y.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # y of kpt

@@ -399,10 +399,23 @@ if __name__ == '__main__':
         # c3tr = C3TR(3, 32)
 
 
-        x = torch.rand(opt.batch_size, 3, 32, 32).to(device)
-        _ = profile(input=x, ops=[c3tr], n=1, device=device)
+        # x = torch.rand(opt.batch_size, 3, 32, 32).to(device)
+        # # _ = profile(input=x, ops=[c3tr], n=1, device=device)
+        # c_ = 32
+        # a = nn.Sequential(DWConv(c_, c_, 3), Conv(c_, c_, 1))
+        # print(type(a))
+        # print(a)
 
+        # b = Conv(3, 32, 3)    # fused conv 
 
+        # print(type(b))
+
+        x = torch.rand(1, 64, 32, 32).to(device)
+        h = DecoupleH(64, nc=80, na=1, nk=17)
+        d = Decouple(64, nc=80, na=1)
+        print(h)
+        # print(d)
+        _ = profile(input=x, ops=[h, d], n=80, device=device)
 
 
 

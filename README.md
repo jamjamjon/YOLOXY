@@ -43,8 +43,6 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 
 
 ### TODO List
-	[x] C3xESE block
-	[x] fused decoupled head
 	[x] sa block -> increse 0.8% map in xs model =====> to test(speed)
 	[x] siou
 	[x] close mosaic in the last 5% epochs
@@ -56,12 +54,18 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[x] RKNN C++ deploy code ref
 	[x] pose-estimation(keypoints detection) -> dataloader and model
 
-	
 	[ing] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
 	[ing] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 	
-	[] scale hyps
+	[] DecoupleH, mAP test; infer time: 0.5ms -> 1.1ms
+	[] 测试完DecoupleH()再进行整合
+
+
+	[] ese block to above results
+
+
+	[] scale hyps with s6 (when done DecoupleH)
 	[] OC_tracker with kpt
 	[] RKNN inference in DetectMultiBackend()
 	[] pose-estimation(keypoints detection) -> head and loss
