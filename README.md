@@ -39,7 +39,7 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 
 
 ### BUG
-	[] kpt => cuda error.
+
 
 
 ### TODO List
@@ -61,10 +61,7 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[ing] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 	
-	[] does L1 loss in OTA matters ?
-	[] yolov7 & yolov7 tiny backbone test
-
-
+	[] scale hyps
 	[] OC_tracker with kpt
 	[] RKNN inference in DetectMultiBackend()
 	[] pose-estimation(keypoints detection) -> head and loss
@@ -74,5 +71,3 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[] end to end => NMS
 	[] segmentation
 
-### about loss gain
-the loss doesn't 'need' anything, but we use these hyperparameter gains to balance loss contributions from each component in proportion to what we believe their importance is to the final solution.

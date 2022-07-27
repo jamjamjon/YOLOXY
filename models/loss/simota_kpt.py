@@ -17,6 +17,7 @@ from utils.general import CONSOLE, LOGGER, colorstr
 
 
 
+
 class ComputeLoss:
     '''
     This func contains SimOTA and siou loss.

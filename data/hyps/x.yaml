@@ -8,20 +8,24 @@ warmup_epochs: 3.0  # warmup epochs (fractions ok)
 warmup_momentum: 0.8  # warmup initial momentum
 warmup_bias_lr: 0.1  # warmup initial bias lr
 
-# # yolov5
+# yolov5
 # box: 0.05  # box loss gain
 # cls: 0.5  # cls loss gain
 # cls_pw: 1.0  # cls BCELoss positive_weight
 # obj: 1.0  # obj loss gain (scale with pixels) 
 # obj_pw: 1.0  # obj BCELoss positive_weight
-# iou_t: 0.20  # IoU training threshold
-# anchor_t: 4.0  # anchor-multiple threshold
 
-# # yolox
-# box_weight: 5.0     # not required unless adjust
-# iou_weight: 3.0     # not required unless adjust
-# cls_weight: 1.0     # not required unless adjust
+#-----------------
+# about loss gain
+# the loss doesn't 'need' anything
+# but we use these hyperparameter gains to balance loss contributions from each component in proportion to what we believe their importance is to the final solution.
+#-----------------
+box: 5.0     # box loss gain, not required unless adjust
+obj: 1.0     # obj loss gain, not required unless adjust
+cls: 1.0     # cls loss gain, not required unless adjust
+kpt: 2.0     # TODO: kpt loss gain, not required unless adjust
 # center_radius: 2.5  # not required unless adjust
+
 
 # Data Augmentation
 fl_gamma: 0.0  # focal loss gamma (efficientDet default gamma=1.5)
@@ -30,7 +34,7 @@ hsv_s: 0.7  # image HSV-Saturation augmentation (fraction)
 hsv_v: 0.4  # image HSV-Value augmentation (fraction)
 degrees: 0.0  # image rotation (+/- deg)
 translate: 0.1  # image translation (+/- fraction)
-scale: 0.6  # image scale (+/- gain)
+scale: 0.5  # image scale (+/- gain)
 shear: 0.0  # image shear (+/- deg)
 perspective: 0.0  # image perspective (+/- fraction), range 0-0.001
 

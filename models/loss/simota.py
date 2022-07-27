@@ -1,6 +1,5 @@
-
 """
-YOLOX Loss functions
+Loss functions
 """
 
 import torch
@@ -18,59 +17,76 @@ from utils.general import CONSOLE, LOGGER, colorstr
 
 
 class ComputeLoss:
-    '''
-    This func contains SimOTA and siou loss.
-    '''
+    # SimOTA
     def __init__(self, model):
         LOGGER.info(f"{colorstr('ComputeLoss: ')} SimOTA")
 
         self.device = next(model.parameters()).device  # get model device
         self.hyp = model.hyp  # hyperparameters
-        self.box_weight = self.hyp.get('box_weight', 5.0)
-
         self.head = de_parallel(model).model[-1]  # Detect() module
-        # self.nl = self.head.nl
-        # self.na = self.head.na
-        # self.nc = self.head.nc
-        # self.stride = self.head.stride
+        self.ng = 0   # number of grid in every scale: 80x80 + 40x40 + 20x20
+
+        # head attrs
         for x in ('nl', 'na', 'nc', 'stride', 'nk', 'no_det', 'no_kpt', 'no'):
             setattr(self, x, getattr(self.head, x))
         
-        self.ng = 0   # number of grid in every scale: 80x80 + 40x40 + 20x20
-
         # Define criteria
         self.BCEcls = nn.BCEWithLogitsLoss(reduction="none")   # reduction="mean" default, pos_weights=None
         self.BCEobj = nn.BCEWithLogitsLoss(reduction="none")   # TODO: add pos_weights=None
         self.L1box = nn.L1Loss(reduction="none")
-
+        if self.nk > 0:
+            self.BCEkpt = nn.BCEWithLogitsLoss(reduction="none")  # kpt
 
 
     def __call__(self, p, targets):
-        # p: {(bs, 1, 80, 80, 85), ...}
-        # targets: { num_object, 6(idx, cls, xywh)}
+        # p: {(bs, 1, 80, 80, no), (bs, 1, 40, 40, no), ...}
+        # targets: { num_object, 6 + no_kpt(idx, cls, xywh, kpts(optional)) }
 
         # init loss
         lcls = torch.zeros(1, device=self.device)
         lobj = torch.zeros(1, device=self.device)
         lbox = torch.zeros(1, device=self.device) 
         lbox_l1 = torch.zeros(1, device=self.device)
+        # if self.nk > 0:
+        lkpt = torch.zeros(1, device=self.device)
 
         # build targets
-        (   pbox, pbox0, pobj, pcls, 
-            tcls, tbox, tbox_l1, tobj, 
+        (   pbox, pbox0, pobj, pcls, pkpt,
+            tcls, tbox, tbox_l1, tobj, tkpt,
             finalists_masks, num_finalists
         ) = self.build_targets(p, targets)
 
-
         # Compute loss
-        lbox += self.box_weight * (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, CIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
+        lbox += (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, CIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
+        lbox_l1 += (self.L1box(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists
         lobj += (self.BCEobj(pobj.view(-1, 1), tobj * 1.0)).sum() / num_finalists
         lcls += (self.BCEcls(pcls.view(-1, self.nc)[finalists_masks], tcls)).sum() / num_finalists
-        lbox_l1 += (self.L1box(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists
-        total_loss =  lbox + lobj + lcls + lbox_l1
 
-        # TODO: Remove L1 Loss
-        return total_loss, torch.cat((lbox, lobj, lcls, lbox_l1)).detach()
+        # kpt loss
+        if self.nk > 0 and pkpt is not None and tkpt is not None:
+
+            # -------------------------
+            # human pose use OKS loss
+            # TODO: loss weights
+            # -------------------------
+            lkpt_, lkpt_conf = self.pose_oks_loss(pkpt.view(-1, self.no_kpt)[finalists_masks], tkpt, tbox)
+            lkpt += (1.0 * lkpt_.sum() / num_finalists) + (5.0 * lkpt_conf.sum() / num_finalists)  
+
+            # -------------------------------------------------------
+            # other keypoints task better use Wingloss or other loss
+            # -------------------------------------------------------
+
+
+        # weight loss
+        lbox *= self.hyp['box']    # self.hyp.get('box', 5.0)    
+        lbox += lbox_l1
+        lcls *= self.hyp['cls']    # self.hyp.get('cls', 1.0)
+        lobj *= self.hyp['obj']    # self.hyp.get('obj', 1.0)
+        lkpt *= self.hyp['kpt']    # self.hyp.get('kpt', 2.0)    
+
+
+        return lbox + lobj + lcls + lkpt, torch.cat((lbox, lobj, lcls, lkpt)).detach()  
+
 
 
     # build predictions
@@ -98,6 +114,13 @@ class ComputeLoss:
             xy_shift = grid.view(1, -1, 2)  # [1, 8400, 2])  grid_xy
             pred[..., :2] = (pred[..., :2] + xy_shift) * self.stride[k]     # xy
             pred[..., 2:4] = torch.exp(pred[..., 2:4]) * self.stride[k]     # wh
+
+            # kpt
+            if self.nk > 0:
+                kpt_conf_grids = torch.zeros_like(xy_shift)[..., 0:1]
+                kpt_grids = torch.cat((xy_shift, kpt_conf_grids), dim = 2).repeat(1, 1, self.nk)
+                pred[..., -3 * self.nk:] = (pred[..., -3 * self.nk:] + kpt_grids) * self.stride[k]
+
             # ------------------------------------------------------------------
 
             # stride between grid 
@@ -114,15 +137,20 @@ class ComputeLoss:
         expanded_strides = torch.cat(expanded_strides, 1)   # [1, n_anchors_all(8400), 1]
         preds_scale = torch.cat(preds_scale, 1)             # [16, 8400, 85]
         p = torch.cat(preds_new, 1)                     # [16, 8400, 85]
+        self.ng = p.shape[1]      # 80x80 + 40x40 + 20x20
 
         pbox = p[:, :, :4]                  # at input size. [batch, n_anchors_all, 4]
         pbox0 = preds_scale[:, :, :4]       # at scales, for l1 loss compute. [batch, n_anchors_all, 4]
         pobj = p[:, :, 4].unsqueeze(-1)     # [batch, n_anchors_all, 1]
-        pcls = p[:, :, 5:]                  # [batch, n_anchors_all, n_cls]
+        pcls = p[:, :, 5: self.no_det]      # [batch, n_anchors_all, n_cls]
+        
+        # kpt
+        if self.nk > 0:
+            pkpt = p[:, :, self.no_det:]  # [batch, n_anchors_all, nk*3]
+        else:
+            pkpt = None
 
-        self.ng = p.shape[1]      # 80x80 + 40x40 + 20x20
-
-        return p, pbox, pbox0, pobj, pcls, xy_shifts, expanded_strides
+        return p, pbox, pbox0, pobj, pcls, pkpt, xy_shifts, expanded_strides
 
 
     # build targets
@@ -137,33 +165,48 @@ class ComputeLoss:
             pbox0,                      # [batch, n_anchors_all, 4]
             pobj,                       # [batch, n_anchors_all, 1]
             pcls,                       # [batch, n_anchors_all, n_cls]
-            self.xy_shifts,                  # [1, n_anchors_all(8400), 2]
-            self.expanded_strides,           # [1, n_anchors_all(8400), 1] 
+            pkpt,                       # [batch, n_anchors_all, nk*3]
+            self.xy_shifts,             # [1, n_anchors_all(8400), 2]
+            self.expanded_strides,      # [1, n_anchors_all(8400), 1] 
         ) = self.build_preds(p)
 
 
         # build targets
-        targets_list = np.zeros((p.shape[0], 1, 5)).tolist()   # batch size
+        targets_list = np.zeros((p.shape[0], 1, 5 + self.nk * 2)).tolist()   # batch size
+
+
         for i, item in enumerate(targets.cpu().numpy().tolist()):
             targets_list[int(item[0])].append(item[1:])
         max_len = max((len(l) for l in targets_list))
-        targets = torch.from_numpy(np.array(list(map(lambda l:l + [[-1,0,0,0,0]]*(max_len - len(l)), targets_list)))[:,1:,:]).to(self.device)
+
+        if self.nk > 0:
+            empty_list = [[-1] + [0] * (self.nk * 2 + 4)]  # cls, xy * self.nk 
+        else: 
+            empty_list = [[-1] + [0] * 4]  # cls, xywh
+
+        targets = torch.from_numpy(np.array(list(map(lambda l:l + empty_list * (max_len - len(l)), targets_list)))[:,1:,:]).to(self.device)
         nts = (targets.sum(dim=2) > 0).sum(dim=1)  # number of objects list per batch [13, 4, 2, ...]
         
-
         # targets cls, box, ...
         tcls, tbox, tbox_l1, tobj, finalists_masks, num_finalists = [], [], [], [], [], 0 
+        if self.nk > 0:
+            tkpt = []
+        else:
+            tkpt = None
         
         # batch images loop
         for idx in range(p.shape[0]):   # batch size
             nt = int(nts[idx])  # num of targets in current image
 
-            if nt == 0:     # neg sample image
+            if nt == 0:     # num targets=0  =>  neg sample image
                 tcls_ = p.new_zeros((0, self.nc))
                 tbox_ = p.new_zeros((0, 4))
                 tbox_l1_ = p.new_zeros((0, 4))
                 tobj_ = p.new_zeros((self.ng, 1))
                 finalists_mask = p.new_zeros(self.ng).bool()
+                if self.nk > 0:
+                    tkpt_ = p.new_zeros((0, self.nk * 2))  # kpt
+
             else:   
                 imgsz = torch.Tensor([[input_w, input_h, input_w, input_h]]).type_as(targets)  # [[640, 640, 640, 640]]
                 t_bboxes = targets[idx, :nt, 1:5].mul_(imgsz)    # gt bbox, de-scaled 
@@ -171,6 +214,13 @@ class ComputeLoss:
                 p_bboxes = pbox[idx]        # pred bbox
                 p_classes = pcls[idx]       # pred cls
                 p_objs = pobj[idx]          # pred obj
+
+                # keypoint: de-scale to origin image size  !!!!
+                if self.nk > 0:
+                    imgsz_kpt = torch.Tensor([[input_w, input_h] * self.nk]).type_as(targets)  # [[640, 640, 640, 640]]
+                    t_kpts = targets[idx, :nt, -2 * self.nk:].mul_(imgsz_kpt)  # t_kpts
+                else:
+                    t_kpts = None
 
                 # do label assignment: SimOTA 
                 (
@@ -180,7 +230,8 @@ class ComputeLoss:
                     tobj_, 
                     tbox_, 
                     tbox_l1_,
-                 ) = self.get_assignments(t_bboxes, t_classes, p_bboxes, p_classes, p_objs)
+                    tkpt_
+                 ) = self.get_assignments(t_bboxes, t_classes, p_bboxes, p_classes, p_objs, t_kpts)
                 
                 # num of assigned anchors in one batch
                 num_finalists += num_anchor_assigned    
@@ -192,6 +243,10 @@ class ComputeLoss:
             tbox_l1.append(tbox_l1_)
             finalists_masks.append(finalists_mask)
 
+            # kpt
+            if self.nk > 0 and tkpt_ is not None:
+                tkpt.append(tkpt_)
+
         # concat
         tcls = torch.cat(tcls, 0)
         tbox = torch.cat(tbox, 0)
@@ -200,16 +255,19 @@ class ComputeLoss:
         finalists_masks = torch.cat(finalists_masks, 0)
         num_finalists = max(num_finalists, 1)
 
+        # kpt
+        if self.nk > 0:
+            tkpt = torch.cat(tkpt, 0)
 
-        return (   pbox, pbox0, pobj, pcls, 
-                    tcls, tbox, tbox_l1, tobj, 
-                    finalists_masks, num_finalists
-                )
+
+        return ( pbox, pbox0, pobj, pcls, pkpt,
+                 tcls, tbox, tbox_l1, tobj, tkpt,
+                 finalists_masks, num_finalists )
 
 
     # SimOTA
     @torch.no_grad()
-    def get_assignments(self, t_bboxes, t_classes, p_bboxes, p_classes, p_objs):
+    def get_assignments(self, t_bboxes, t_classes, p_bboxes, p_classes, p_objs, t_kpts=None):
 
         num_objects = t_bboxes.shape[0]   # number of gt object per image
 
@@ -272,8 +330,14 @@ class ComputeLoss:
             tbox_l1_[:, :2] = t_bboxes[matched_gt_inds][:, :2] / stride_ - grid_
             tbox_l1_[:, 2:4] = torch.log(t_bboxes[matched_gt_inds][:, 2:4] / stride_ + 1e-8)
 
-        return finalists_mask, num_anchor_assigned, tcls_, tobj_, tbox_, tbox_l1_
-        # return finalists_mask, num_anchor_assigned, tcls_, tobj_, tbox_
+            # kpt
+            if t_kpts is not None:
+                tkpt_ = t_kpts[matched_gt_inds]
+            else:
+                tkpt_ = None
+
+        return finalists_mask, num_anchor_assigned, tcls_, tobj_, tbox_, tbox_l1_, tkpt_
+
 
 
     # get candidates: a fixed center region
@@ -357,3 +421,31 @@ class ComputeLoss:
         finalists_mask = candidates_mask
 
         return num_anchor_assigned, pred_ious_this_matching, matched_gt_inds, finalists_mask
+
+
+    # human pose oks loss
+    def pose_oks_loss(self, pkpt, tkpt, tbox):
+
+        kps_sigmas = torch.tensor([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62, .62, 1.07,
+                                   1.07, .87, .87, .89, .89]) / 10.0  # Key points of human body
+        
+        sigmas = kps_sigmas.to(self.device)
+        pkpt_x, pkpt_y, pkpt_score = pkpt[:, 0::3], pkpt[:, 1::3], pkpt[:, 2::3]
+        tkpt_x, tkpt_y = tkpt[:, 0::2], tkpt[:, 1::2]
+
+        # loss kpt conf
+        tkpt_mask = (tkpt[:, 0::2] > 0)     # visibilty flag are used as GT
+        lkpt_conf = self.BCEkpt(pkpt_score, tkpt_mask.float()).mean(axis=1)
+        
+        # OKS based loss
+        d = (pkpt_x - tkpt_x) ** 2 + (pkpt_y - tkpt_y) ** 2
+        s = torch.prod(tbox[:, -2:], dim=1, keepdim=True)  # scale derived from bbox gt
+        kpt_loss_factor = (torch.sum(tkpt_mask != 0) + torch.sum(tkpt_mask == 0)) / torch.sum(tkpt_mask != 0)
+        oks = torch.exp(-d / (s * (4 * sigmas) + 1e-9))
+        lkpt = kpt_loss_factor * ((1 - oks ** 2) * tkpt_mask).mean(axis=1)
+
+        return lkpt, lkpt_conf
+
+    # TODO
+    def wingloss(self):
+        pass

@@ -281,14 +281,14 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     if cuda and RANK != -1:
         model = smart_DDP(model)
 
-    # Model attributes
+    # Model attributes  TODO
     # nl = de_parallel(model).model[-1].nl  # number of detection layers (to scale hyps)
     # hyp['box'] *= 3 / nl  # scale to layers
     # hyp['cls'] *= nc / 80 * 3 / nl  # scale to classes and layers
     # hyp['obj'] *= (imgsz / 640) ** 2 * 3 / nl  # scale to image size and layers
-    # hyp['label_smoothing'] = opt.label_smoothing  # in compute loss, not used in simota
+    # hyp['label_smoothing'] = opt.label_smoothing  # in compute loss, not used in OTA
 
-    # attach var to model
+    # Attach attrs to model
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
     model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
@@ -307,28 +307,17 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     stopper, stop = EarlyStopping(patience=opt.patience), False
 
     # compute_loss 
-    if nk == 0:
-        from models.loss.simota import ComputeLoss
-
-        # mloss = torch.zeros(4, device=device)  # mean losses
-        # loss_strs = ('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS', 'OTHER')
-        task_loss = ('BOX_L1',)
-
-    else:
-        from models.loss.simota_kpt import ComputeLoss
-
-        # mloss = torch.zeros(4, device=device)  # mean losses
-        # loss_strs = ('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS', 'KPT')
-        task_loss = ('KPT',)
-
+    from models.loss.simota import ComputeLoss
     compute_loss = ComputeLoss(model)  
 
-
-    callbacks.run('on_train_start')     # before train
+    # before train
+    callbacks.run('on_train_start')     
     LOGGER.info(f"{colorstr('Train Results: ')}{save_dir}\n"
                 f"{colorstr('Train Epochs: ')}{epochs}")
 
-    for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
+
+    # epoch ------------------------------------------------------------------
+    for epoch in range(start_epoch, epochs):  
         callbacks.run('on_train_epoch_start')
         model.train()
 
@@ -344,9 +333,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             dataset.mosaic = False  # close mosaic
 
         # mloss setting
-        mloss = torch.zeros(3 + len(task_loss), device=device)  # mean losses
-        LOGGER.info(('\n' + '%10s' * (4 + 3 + len(task_loss))) % (('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS') + task_loss))
-        # LOGGER.info(('\n' + '%10s' * (4 + mloss.shape[0])) % loss_strs)
+        mloss = torch.zeros(3 + 1, device=device)  # mean losses
+        LOGGER.info(('\n' + '%10s' * (4 + mloss.shape[0])) % ('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS', 'KPT'))
 
         # train_loader
         if RANK != -1:
@@ -355,7 +343,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         if RANK in {-1, 0}:
             pbar = tqdm(pbar, total=nb, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5')  # progress bar
         optimizer.zero_grad()
-        for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
+
+
+        # batch -------------------------------------------------------------
+        for i, (imgs, targets, paths, _) in pbar:  
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
             callbacks.run('on_train_batch_start', ni, imgs, targets, paths, plots, nk, 10)  # plot batch images
@@ -548,9 +539,6 @@ def parse_opt(known=False):
     parser.add_argument('--upload_dataset', nargs='?', const=True, default=False, help='W&B: Upload data, "val" option')
     parser.add_argument('--bbox_interval', type=int, default=-1, help='W&B: Set bounding-box image logging interval')
     parser.add_argument('--artifact_alias', type=str, default='latest', help='W&B: Version of dataset artifact to use')
-
-    # mission option
-    # parser.add_argument('--mission', type=str, choices=['det', 'seg', 'kpt'], default='det', help='mission')
 
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
