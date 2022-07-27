@@ -194,9 +194,6 @@ class ComputeLoss:
         # kpt
         if self.nk > 0:
             
-            # print(f'[pkpt]===>: {pkpt.view(-1, self.no_kpt)[finalists_masks]}')
-            # print(f'[tkpt]===>: {tkpt}')
-
             loss_kpts, loss_kpts_vis = self.kpts_oks_loss(pkpt.view(-1, self.no_kpt)[finalists_masks], tkpt, tbox)
             # lkpt += (self.kpt_weight * loss_kpts.sum() / num_finalists) + (self.kptv_weight *loss_kpts_vis.sum() / num_finalists)
             lkpt += (1.0 * loss_kpts.sum() / num_finalists) + (1.0 *loss_kpts_vis.sum() / num_finalists)
@@ -206,8 +203,11 @@ class ComputeLoss:
 
         # weight loss
         lbox *= self.box_weight    # 5.0
+        lbox += lbox + lbox_l1
+
+
         lkpt *= 5.0   # TODO 
-        total_loss = lbox + lobj + lcls + lbox_l1 + lkpt
+        total_loss = lbox + lobj + lcls + lkpt
 
         # total_loss = torch.nan_to_num(total_loss)
 

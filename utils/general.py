@@ -550,7 +550,7 @@ def check_amp(model):
     f = ROOT / 'data' / 'images' / 'bus.jpg'  # image to check
     im = f if f.exists() else 'https://ultralytics.com/images/bus.jpg' if check_online() else np.ones((640, 640, 3))
     try:
-        assert amp_allclose(model, im) or amp_allclose(DetectMultiBackend('', device), im)
+        assert amp_allclose(model, im) or amp_allclose(DetectMultiBackend('s-conv.pt', device), im)
         LOGGER.info(emojis(f'{prefix} ✅'))
         return True
     except Exception:
