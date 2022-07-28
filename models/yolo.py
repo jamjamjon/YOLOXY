@@ -186,6 +186,19 @@ class Model(nn.Module):
                     b = mi.c.bias.data
                     b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
                     mi.c.bias = torch.nn.Parameter(b, requires_grad=True)
+                    
+                # decoupled head
+                elif type(mi) is HydraHead:
+                    # obj
+                    b = mi.conv_obj.conv2d.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
+                    b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
+                    mi.conv_obj.conv2d.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
+                    # box
+                    # cls
+                    b = mi.conv_cls.conv2d.bias.data
+                    b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
+                    mi.conv_cls.conv2d.bias = torch.nn.Parameter(b, requires_grad=True)
+
                
                 # coupled head
                 else:  # default
