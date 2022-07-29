@@ -23,7 +23,7 @@ warmup_bias_lr: 0.1  # warmup initial bias lr
 box: 5.0     # box loss gain, not required unless adjust
 obj: 1.0     # obj loss gain, not required unless adjust
 cls: 1.0     # cls loss gain, not required unless adjust
-kpt: 2.0     # TODO: kpt loss gain, not required unless adjust
+kpt: 6.0     # TODO: kpt loss gain, not required unless adjust
 # center_radius: 2.5  # not required unless adjust
 
 

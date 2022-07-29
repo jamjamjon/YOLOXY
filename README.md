@@ -59,8 +59,8 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 	
         
-        [] one2one: Hungarian Algorithm to re-assign by cost
-        [] many2one: 对没有分配anchor的gt进行分配cost最小的为分配anchor(SimOTA bug)
+    [] one2one: Hungarian Algorithm to re-assign by cost
+    [] many2one: 对没有分配anchor的gt进行分配cost最小的为分配anchor(SimOTA bug)
 	[] DecoupleH, mAP test; infer time: 0.5ms -> 1.1ms
 	[] 测试完DecoupleH()再进行整合
 

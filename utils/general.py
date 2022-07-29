@@ -292,7 +292,7 @@ def file_age(path=__file__):
 def file_date(path=__file__):
     # Return human-readable file modification date, i.e. '2021-3-26'
     t = datetime.fromtimestamp(Path(path).stat().st_mtime)
-    return f'{t.year}-{t.month}-{t.day}'
+    return f'{t.year}-{t.month}-{t.day} {t.hour}:{t.second}'
 
 
 def file_size(path):
@@ -550,7 +550,7 @@ def check_amp(model):
     f = ROOT / 'data' / 'images' / 'bus.jpg'  # image to check
     im = f if f.exists() else 'https://ultralytics.com/images/bus.jpg' if check_online() else np.ones((640, 640, 3))
     try:
-        assert amp_allclose(model, im) or amp_allclose(DetectMultiBackend('s-conv.pt', device), im)
+        assert amp_allclose(model, im) or amp_allclose(DetectMultiBackend('s-conv-decouple.pt', device), im)
         LOGGER.info(emojis(f'{prefix} ✅'))
         return True
     except Exception:

@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import rich
 import numpy as np
 import math
+from scipy.optimize import linear_sum_assignment
 
 from utils.torch_utils import de_parallel
 from utils.metrics import bbox_iou, pairwise_bbox_iou
@@ -57,7 +58,7 @@ class ComputeLoss:
         ) = self.build_targets(p, targets)
 
         # Compute loss
-        lbox += (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, CIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
+        lbox += (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, SIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
         lbox_l1 += (self.L1box(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists
         lobj += (self.BCEobj(pobj.view(-1, 1), tobj * 1.0)).sum() / num_finalists
         lcls += (self.BCEcls(pcls.view(-1, self.nc)[finalists_masks], tcls)).sum() / num_finalists
@@ -70,7 +71,7 @@ class ComputeLoss:
             # TODO: loss weights
             # -------------------------
             lkpt_, lkpt_conf = self.pose_oks_loss(pkpt.view(-1, self.no_kpt)[finalists_masks], tkpt, tbox)
-            lkpt += (1.0 * lkpt_.sum() / num_finalists) + (5.0 * lkpt_conf.sum() / num_finalists)  
+            lkpt += (1.0 * lkpt_.sum() / num_finalists) + (2.0 * lkpt_conf.sum() / num_finalists)  
 
             # -------------------------------------------------------
             # other keypoints task better use Wingloss or other loss
@@ -309,7 +310,6 @@ class ComputeLoss:
             matched_gt_inds,
             finalists_mask     
         ) = self.dynamic_k_matching(cost, pair_wise_ious, t_classes, candidates_mask)
-
         del pair_wise_cls_loss, cost, pair_wise_ious, pair_wise_ious_loss
 
         # 7. empty cuda cache
@@ -377,47 +377,73 @@ class ComputeLoss:
         return is_in_boxes_or_center, is_in_boxes_and_center
 
 
-    # assign different k positive samples for every gt. 给每个gt分配k个正样本 
+    # assign different k positive samples for every gt 
     def dynamic_k_matching(self, cost, pair_wise_ious, t_classes, candidates_mask):
         
         ious_in_boxes_matrix = pair_wise_ious   # iou matrix 
 
-        # 1 给当前gt匹配10个iou最大的anchor point
+        # get top-k(10) iou anchor point
         n_candidate_k = min(10, ious_in_boxes_matrix.size(1))
         topk_ious, _ = torch.topk(ious_in_boxes_matrix, n_candidate_k, dim=1)
         
-        # 2 将10个anchor point的iou求和并向下取整，得到dynamkic-k
+        # calc dynamic-K for each gt
         dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1)
         dynamic_ks = dynamic_ks.tolist()
 
-        # 最后gt和anchor point匹配到的矩阵，gt分配的anchor为1，其余为0
+        # create a matching matrix for gt and anchor point(row: gt, col: anchor)
         matching_matrix = torch.zeros_like(cost, dtype=torch.uint8)
         
-        # 3 根据cost来为每个gt分配k个anchor
-        for gt_idx in range(t_classes.shape[0]):   # number of objects
+        # assign num of K anchor points for each gt, based on cost matrix
+        for gt_idx in range(t_classes.shape[0]):   # number of gt objects
             _, pos_idx = torch.topk(cost[gt_idx], k=dynamic_ks[gt_idx], largest=False)
             matching_matrix[gt_idx][pos_idx] = 1
         del topk_ious, dynamic_ks, pos_idx
 
-        # 4 过滤到共用的anchor point
+        # deal with conflict: filter out the anchor point has been assigned to many gts
         anchor_matching_gt = matching_matrix.sum(0)
         if (anchor_matching_gt > 1).sum() > 0:
             _, cost_argmin = torch.min(cost[:, anchor_matching_gt > 1], dim=0)
             matching_matrix[:, anchor_matching_gt > 1] *= 0
             matching_matrix[cost_argmin, anchor_matching_gt > 1] = 1
 
-        # 5 所有gt一共分配到了多少anchor
+        #--------------------------------------------------------------------------
+        # Fix simota bug(many2one): assign 1 anchor for gts those have no assigned anchor cause by solving conflict  
+        #--------------------------------------------------------------------------
+        if (matching_matrix.sum(1) == 0).sum() > 0:    # some gt(row) has no assigned anchors
+
+            # cost matrix: not assigned gts (rows)
+            cost_non_assigned = cost[matching_matrix.sum(1) == 0, :]
+
+            # assign bigger enough cost value(1e10) for already assigned anchors
+            cost_non_assigned[:, matching_matrix.sum(0) > 0] = 1e10    
+
+            # do linear sum assignment 
+            cost_non_assigned_cpu = cost_non_assigned.cpu().numpy()
+            i, j = linear_sum_assignment(cost_non_assigned_cpu)
+
+            # create matching matrix non assigned
+            matching_matrix_non_assigned = torch.zeros_like(cost_non_assigned, dtype=torch.uint8)
+            matching_matrix_non_assigned[i, j] = 1
+
+            # update matching_matrix
+            matching_matrix[matching_matrix.sum(1) == 0, :] = matching_matrix_non_assigned
+
+        # check again if matching matrix still has conflicts
+        assert (matching_matrix.sum(0) > 1).sum() == 0, '>>> Matching matrix still has conflicts!!!!!!!'
+        #--------------------------------------------------------------------------
+
+        # get the number of anchor points which have been assigned to all gts
         fg_mask_inboxes = matching_matrix.sum(0) > 0
         num_anchor_assigned = fg_mask_inboxes.sum().item()
 
-        # 6. update candidates_mask
+        # update candidates_mask
         candidates_mask[candidates_mask.clone()] = fg_mask_inboxes
         matched_gt_inds = matching_matrix[:, fg_mask_inboxes].argmax(0)
 
-        # 7 matching_matrix(其中除了0就是1) * iou matrix
+        # matching_matrix * iou matrix
         pred_ious_this_matching = (matching_matrix * pair_wise_ious).sum(0)[fg_mask_inboxes]
 
-        # 8 finalists_mask
+        # finalists_mask
         finalists_mask = candidates_mask
 
         return num_anchor_assigned, pred_ious_this_matching, matched_gt_inds, finalists_mask

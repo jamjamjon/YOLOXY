@@ -320,7 +320,6 @@ class SPPF(nn.Module):
             return self.cv2(torch.cat((x, y1, y2, self.m(y2)), 1))
 
 
-
 class Concat(nn.Module):
     # Concatenate a list of tensors along dimension
     def __init__(self, dimension=1):
@@ -331,6 +330,8 @@ class Concat(nn.Module):
         return torch.cat(x, self.d)
 
 
+
+# TODO: deprecate, to remove
 class Decouple(nn.Module):
     # Decoupled head
     def __init__(self, c1, nc=80, na=1):  # ch_in, num_classes, num_anchors
@@ -363,54 +364,46 @@ class Decouple(nn.Module):
                           c.view(bs, self.na, self.nc, ny, nx)), 2).view(bs, -1, ny, nx)
 
 
-
-
-class DWCC2(nn.Module):
-    # 3x3dwconv + 1x1conv + 1x1conv2d
+class HeadBranch(nn.Module):
+    # Head Branch Conv Block Before Output
     def __init__(self, c1, c2):
         super().__init__()
-        
         self.dwconv = DWConv(c1, c1, 3)
         self.conv = Conv(c1, c1, 1)
+        # self.conv = Conv(c1, c1, 3)
+        # self.conv = AsymConv(c1, c1, 3)
         self.conv2d = nn.Conv2d(c1, c2, 1)
 
     def forward(self, x):
-        return self.conv2d(self.conv(self.dwconv(x)))
-        # return self.conv2d(x)
+        # return self.conv2d(self.conv(self.dwconv(x)))
+        return self.conv2d(self.conv(x))
 
 
-class DecoupleH(nn.Module):
-    # Decoupled Hydra head
-    def __init__(self, c1, nc=80, na=1, nk=0, ns=0):  # ch_in, num_classes, num_anchors
+class HydraHead(nn.Module):
+    # Decoupled Hydra Head
+    def __init__(self, c1, nc=80, na=1, nk=0):  # ch_in, num_classes, num_anchors, num_keypoints
         super().__init__()
         self.na = na    # number of anchors
         self.nc = nc    # number of classes
         self.nk = nk    # number of keypoints
-        self.ns = ns    # number of segments
 
         c_ = min(c1, 256)  # min(c1, nc * na)
-        # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
+        self.cv1 = Conv(c1, c_, 1)      # stem
+        # self.cv2 = Conv(c_, c_, 3)    # TODO   
+        self.cv2 = AsymConv(c_, c_, 3)  #   
 
-        self.cv1 = Conv(c1, c_, 1)    # stem
-        self.cv2 = Conv(c_, c_, 3)    
-
-        # TODO: 1x1conv2d => 3x3dwconv + 1x1conv + 1x1conv2d
-        # self.conv_box = nn.Conv2d(c_, na * 4, 1)      # box
-        # self.conv_obj = nn.Conv2d(c_, na * 1, 1)      # obj  
-        # self.conv_cls = nn.Conv2d(c_, na * nc, 1)      # cls
-        # self.conv_kpt = nn.Conv2d(c_, na * nk, 1)      # kpt
-        
-        # infer time: 0.5ms -> 1.1ms
-        self.conv_box = DWCC2(c_, na * 4)      # box => x,y,w,h
-        self.conv_obj = DWCC2(c_, na * 1)      # obj  
-        self.conv_cls = DWCC2(c_, na * nc)      # cls
+        # Head Branch Conv Block To replace single 1x1 conv2d
+        self.conv_box = HeadBranch(c_, na * 4)      # box => x,y,w,h
+        self.conv_obj = HeadBranch(c_, na * 1)      # obj  
+        self.conv_cls = HeadBranch(c_, na * nc)      # cls
         if self.nk > 0:
-            self.conv_kpt = DWCC2(c_, na * nk * 3)      # kpt => x,y,conf
+            self.conv_kpt = HeadBranch(c_, na * nk * 3)      # kpt => x,y,conf
         
-
+        
     def forward(self, x):
         bs, nc, ny, nx = x.shape  # BCHW
 
+        # x = self.cv1(x)
         x = self.cv2(self.cv1(x))
         x_box = self.conv_box(x)     # box
         x_obj = self.conv_obj(x)     # obj
@@ -418,7 +411,7 @@ class DecoupleH(nn.Module):
         if self.nk > 0:
             x_kpt = self.conv_kpt(x)     # cls
         
-        # x list
+        # outputs list
         xs = [x_obj.view(bs, self.na, 1, ny, nx), 
               x_box.view(bs, self.na, 4, ny, nx), 
               x_cls.view(bs, self.na, self.nc, ny, nx)]
@@ -446,16 +439,10 @@ class DetectX(nn.Module):
         self.na = self.anchors = 1    # number of anchors 
         self.grid = [torch.zeros(1)] * self.nl    # TODO: init grid 用于保存每层的每个网格的坐标
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
+        self.m = nn.ModuleList(HydraHead(x, self.nc, self.na, self.nk) for x in ch)  # hydra head
 
-        # Head for detection
-        # self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)    # couple head
-        self.m = nn.ModuleList(Decouple(x, self.nc, self.na) for x in ch)       # decouple head
-
-        # Head for keypoints
-        # TODO: remove, user DecoupleH()
         if self.nk > 0:
             LOGGER.info(f"{colorstr(f'Detection with keypoints.')} Num_keypoints: {self.nk}")
-            self.m_kpt = nn.ModuleList(nn.Conv2d(x, self.no_kpt * self.na, 1) for x in ch)
 
 
     def forward(self, x):
@@ -464,10 +451,7 @@ class DetectX(nn.Module):
             x_raw = []    
 
         for i in range(self.nl):
-            if self.nk > 0:    # kpts
-                x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1)
-            else:    # det
-                x[i] = self.m[i](x[i])
+            x[i] = self.m[i](x[i])  # outputs after hydra head
 
             # export raw mode 
             if self.export_raw:
@@ -479,6 +463,7 @@ class DetectX(nn.Module):
 
             # inference
             if not self.training:
+                # ----------------------------------------------------
                 # make grid
                 if self.grid[i].shape[2:4] != x[i].shape[2:4]:
                     d = self.stride.device
@@ -488,7 +473,9 @@ class DetectX(nn.Module):
                     else:
                         yv, xv = torch.meshgrid(torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t))
                     self.grid[i] = torch.stack((xv, yv), 2).view(1, self.na, ny, nx, 2).float()
-
+                grid_x = self.grid[i][..., 0:1]   # grid x
+                grid_y = self.grid[i][..., 1:2]   # grid y
+                # ----------------------------------------------------
                 y = x[i]    # make a copy
 
                 # do sigmoid to box (cls, conf)
@@ -496,11 +483,7 @@ class DetectX(nn.Module):
                 
                 # do sigmoid to kpt (conf)
                 if self.nk > 0:
-
                     y[..., self.no_det + 2::3] = y[..., self.no_det + 2::3].sigmoid()  # kpt {x,y,conf} 
-                    kpt_grid_x = self.grid[i][..., 0:1]   # grid x
-                    kpt_grid_y = self.grid[i][..., 1:2]   # grid y
-
 
                 # decode xywh, kpt(optional)
                 if self.inplace:
@@ -508,9 +491,8 @@ class DetectX(nn.Module):
                     y[..., 2:4] = torch.exp(y[..., 2:4]) * self.stride[i].to(y.device) # wh
 
                     if self.nk > 0:     # has kpt
-                        #
-                        y[..., self.no_det::3] = (y[..., self.no_det::3] + kpt_grid_x.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # x of kpt
-                        y[..., self.no_det + 1::3] = (y[..., self.no_det + 1::3] + kpt_grid_y.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # y of kpt
+                        y[..., self.no_det::3] = (y[..., self.no_det::3] + grid_x.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # x of kpt
+                        y[..., self.no_det + 1::3] = (y[..., self.no_det + 1::3] + grid_y.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # y of kpt
 
                 else:
                     xy = (y[..., 0:2] + self.grid[i]) * self.stride[i]  # xy
@@ -525,147 +507,6 @@ class DetectX(nn.Module):
 
         return x_raw if self.export_raw else x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)  # x not do sigmoid(), while z did
 
-
-class HydraHead(nn.Module):
-    # Decoupled Hydra Head
-    def __init__(self, c1, nc=80, na=1, nk=0):  # ch_in, num_classes, num_anchors, num_keypoints
-        super().__init__()
-        self.na = na    # number of anchors
-        self.nc = nc    # number of classes
-        self.nk = nk    # number of keypoints
-        # self.ns = ns    # number of segments
-
-        c_ = min(c1, 256)  # min(c1, nc * na)
-
-        self.cv1 = Conv(c1, c_, 1)      # stem
-        self.cv2 = Conv(c_, c_, 3)      # TODO: if need ??? AsymConv ??? CrossConv(in box branch) ???    
-
-        # Update: 1x1conv2d => 3x3dwconv + 1x1conv + 1x1conv2d
-        # infer time: 0.5ms -> 1.1ms
-        self.conv_box = DWCC2(c_, na * 4)      # box => x,y,w,h
-        self.conv_obj = DWCC2(c_, na * 1)      # obj  
-        self.conv_cls = DWCC2(c_, na * nc)      # cls
-        if self.nk > 0:
-            self.conv_kpt = DWCC2(c_, na * nk * 3)      # kpt => x,y,conf
-        
-        
-    def forward(self, x):
-        bs, nc, ny, nx = x.shape  # BCHW
-
-        x = self.cv2(self.cv1(x))
-        x_box = self.conv_box(x)     # box
-        x_obj = self.conv_obj(x)     # obj
-        x_cls = self.conv_cls(x)     # cls
-        if self.nk > 0:
-            LOGGER.info(f"{colorstr(f'Detection with keypoints.')} Num_keypoints: {self.nk}")
-            x_kpt = self.conv_kpt(x)     # cls
-        
-        # x list
-        xs = [x_obj.view(bs, self.na, 1, ny, nx), 
-              x_box.view(bs, self.na, 4, ny, nx), 
-              x_cls.view(bs, self.na, self.nc, ny, nx)]
-        if self.nk > 0:
-            xs.append(x_kpt.view(bs, self.na, self.nk * 3, ny, nx))
-
-        return torch.cat(xs, 2).view(bs, -1, ny, nx)
-
-
-class Detect(nn.Module):
-    # Anchor free Detect Layer
-    stride = None  # strides computed during build
-    export = False  # export mode
-    export_raw = False  # export raw mode, for those not support complex operators like ScatterND, GatherND, ... 
-
-    def __init__(self, nc=80, nk=0, ch=(), inplace=True):  # detection layer
-        super().__init__()
-        # CONSOLE.log(log_locals=True)      # local variables
-        self.nc = nc        # number of classes
-        self.nk = nk        # number of keypoints
-        self.no_det = self.nc + 5   # num_outputs of detection box 
-        self.no_kpt = 3 * self.nk   # num_outputs of keypoints 
-        self.no = self.no_det + self.no_kpt    # number of outputs per anchor,  keypoint: (xi, yi, i_conf)
-        self.nl = len(ch)  # number of detection layers, => 3
-        self.na = self.anchors = 1    # number of anchors 
-        self.grid = [torch.zeros(1)] * self.nl    # TODO: init grid 用于保存每层的每个网格的坐标
-        self.inplace = inplace  # use in-place ops (e.g. slice assignment)
-        self.m = nn.ModuleList(HydraHead(x, self.nc, self.na, self.nk) for x in ch)  # hydra head
-
-    def forward(self, x):
-        z = []  # inference output
-        if self.export_raw:  # export raw outputs vector
-            x_raw = []    
-
-        for i in range(self.nl):
-
-            x[i] = self.m[i](x[i])
-
-            # export raw mode 
-            if self.export_raw:
-                x_raw.append(x[i])
-
-            # reshape tensor
-            bs, _, ny, nx = x[i].shape
-            x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()   # torch.Size([1, 1, 80, 80, 85])
-
-            # inference
-            if not self.training:
-
-                # make grid
-                if self.grid[i].shape[2:4] != x[i].shape[2:4]:
-                    # self.grid[i] = _make_grid(ny, nx)
-                    self.grid[i], kpt_grid_x, kpt_grid_y = _make_grid(ny, nx)
-
-                y = x[i]    # make a copy
-
-                # do sigmoid to box (cls, conf)
-                y[..., 4: self.nc + 5] = y[..., 4: self.nc + 5].sigmoid()  # det bbox {xywh, cls, conf, kpts(optional)}
-                
-                # do sigmoid to kpt (conf)
-                if self.nk > 0:
-                    y[..., self.no_det + 2::3] = y[..., self.no_det + 2::3].sigmoid()  # kpt {x,y,conf} 
-                    # kpt_grid_x = self.grid[i][..., 0:1]   # grid x
-                    # kpt_grid_y = self.grid[i][..., 1:2]   # grid y
-
-
-                # decode xywh, kpt(optional)
-                if self.inplace:
-                    y[..., 0:2] = (y[..., 0:2] + self.grid[i].to(y.device)) * self.stride[i].to(y.device)  # xy
-                    y[..., 2:4] = torch.exp(y[..., 2:4]) * self.stride[i].to(y.device) # wh
-
-                    if self.nk > 0:     # has kpt
-                        #
-                        y[..., self.no_det::3] = (y[..., self.no_det::3] + kpt_grid_x.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # x of kpt
-                        y[..., self.no_det + 1::3] = (y[..., self.no_det + 1::3] + kpt_grid_y.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # y of kpt
-
-                else:
-                    xy = (y[..., 0:2] + self.grid[i]) * self.stride[i]  # xy
-                    wh = torch.exp(y[..., 2:4]) * self.stride[i]  # wh
-                    if self.nk > 0:     # has kpt
-                        y[..., self.no_det::3] = (y[..., self.no_det::3] + self.grid[i].repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # xy of kpt
-                        y[..., self.no_det + 1::3] = (y[..., self.no_det + 1::3] + self.grid[i].repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # xy of kpt
-                    y = torch.cat((xy, wh, y[..., 4:]), -1)
-
-                z.append(y.view(bs, -1, self.no))
-
-
-        return x_raw if self.export_raw else x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)  # x not do sigmoid(), while z did
-
-
-    @staticmethod
-    def _make_grid(ny, nx):
-        d = self.stride.device
-        t = self.stride.dtype
-        if check_version(torch.__version__, '1.10.0'):  # torch>=1.10.0 meshgrid workaround for torch>=0.7 compatibility
-            yv, xv = torch.meshgrid(torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t), indexing='ij')
-        else:
-            yv, xv = torch.meshgrid(torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t))
-        grid = torch.stack((xv, yv), 2).view(1, self.na, ny, nx, 2).float()
-
-        # # for kpt
-        grid_x = grid[..., 0:1]   # grid x
-        grid_y = grid[..., 1:2]   # grid y
-
-        return grid, grid_x, grid_y
 
 
 class DetectMultiBackend(nn.Module):

@@ -158,54 +158,44 @@ class Model(nn.Module):
         if c:
             LOGGER.info(f"{sum(dt):10.2f} {'-':>10s} {'-':>10s}  Total")
 
-    # def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
-    #     # https://arxiv.org/abs/1708.02002 section 3.3
-    #     # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
-    #     m = self.model[-1]  # Detect() module
-    #     for mi, s in zip(m.m, m.stride):  # from
-    #         b = mi.bias.view(m.na, -1).detach()  # conv.bias(255) to (3,85)
-    #         b[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-    #         b[:, 5:] += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-    #         mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-
 
     def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
-            # https://arxiv.org/abs/1708.02002 section 3.3
-            # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
-            m = self.model[-1]  # Detect() module
-            for mi, s in zip(m.m, m.stride):  # from
+        # https://arxiv.org/abs/1708.02002 section 3.3
+        # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
+        m = self.model[-1]  # Detect() module
+        for mi, s in zip(m.m, m.stride):  # from
+            
+            # decoupled head
+            if type(mi) is Decouple:
+                # obj
+                b = mi.b2.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
+                b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
+                mi.b2.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
+                # box
+                # cls
+                b = mi.c.bias.data
+                b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
+                mi.c.bias = torch.nn.Parameter(b, requires_grad=True)
                 
-                # decoupled head
-                if type(mi) is Decouple:
-                    # obj
-                    b = mi.b2.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
-                    b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-                    mi.b2.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-                    # box
-                    # cls
-                    b = mi.c.bias.data
-                    b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-                    mi.c.bias = torch.nn.Parameter(b, requires_grad=True)
-                    
-                # decoupled head
-                elif type(mi) is HydraHead:
-                    # obj
-                    b = mi.conv_obj.conv2d.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
-                    b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-                    mi.conv_obj.conv2d.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-                    # box
-                    # cls
-                    b = mi.conv_cls.conv2d.bias.data
-                    b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-                    mi.conv_cls.conv2d.bias = torch.nn.Parameter(b, requires_grad=True)
+            # decoupled head
+            elif type(mi) is HydraHead:
+                # obj
+                b = mi.conv_obj.conv2d.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
+                b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
+                mi.conv_obj.conv2d.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
+                # box
+                # cls
+                b = mi.conv_cls.conv2d.bias.data
+                b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
+                mi.conv_cls.conv2d.bias = torch.nn.Parameter(b, requires_grad=True)
 
-               
-                # coupled head
-                else:  # default
-                    b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
-                    b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-                    b.data[:, 5:] += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-                    mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
+           
+            # coupled head
+            else:  # default
+                b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
+                b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
+                b.data[:, 5:] += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
+                mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
 
     def _print_biases(self):
@@ -310,7 +300,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
             c2 = sum(ch[x] for x in f)
 
         # Detect for yolox
-        elif m is DetectX:
+        elif m in (DetectX, ):
             args.append([ch[x] for x in f])
 
         elif m is Contract:
@@ -423,13 +413,21 @@ if __name__ == '__main__':
 
         # print(type(b))
 
-        x = torch.rand(1, 64, 32, 32).to(device)
-        h = DecoupleH(64, nc=80, na=1, nk=17)
-        d = Decouple(64, nc=80, na=1)
-        print(h)
-        # print(d)
-        _ = profile(input=x, ops=[h, d], n=80, device=device)
+        x = torch.rand(1, 512, 32, 32).to(device)
+        # h = DecoupleH(64, nc=80, na=1, nk=17)
+        # d = Decouple(64, nc=80, na=1)
+        # print(h)
+        # # print(d)
+        # _ = profile(input=x, ops=[h, d], n=80, device=device)
 
+
+        # [-1, 3, C3xESE, [1024, True]],
+        c3x = C3x(512, 512) 
+        # c3xese = C3xESE(512, 512, 1, False) 
+        c3xese = C3xESE(512, 512, ese=True) 
+        print(c3x)
+        print(c3xese)
+        _ = profile(input=x, ops=[c3x, c3xese], n=180, device=device)
 
 
     # # test all models

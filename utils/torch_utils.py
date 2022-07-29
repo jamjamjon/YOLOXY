@@ -58,7 +58,8 @@ def device_count():
 
 def select_device(device='', batch_size=0, newline=True):
     # device = None or 'cpu' or 0 or '0' or '0,1,2,3'
-    s = f'YOLOX-BETA 🚀 {file_date()} | Python-{platform.python_version()} | torch-{torch.__version__} '
+    # s = f'Enviroment 🚀 {file_date()} | Python-{platform.python_version()} | torch-{torch.__version__} | '
+    s = f'Enviroment 🚀 Python-{platform.python_version()} | Torch-{torch.__version__} | '
     device = str(device).strip().lower().replace('cuda:', '').replace('none', '')  # to string, 'cuda:0' to '0'
     cpu = device == 'cpu'
     mps = device == 'mps'  # Apple Metal Performance Shaders (MPS)
@@ -245,7 +246,7 @@ def model_info(model, verbose=False, img_size=640):
         fs = ''
 
     name = Path(model.yaml_file).stem.replace('yolov5', 'YOLOv5') if hasattr(model, 'yaml_file') else 'Model'
-    LOGGER.info(f"{colorstr(f'{name} summary')} 👉 {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
+    LOGGER.info(f"{colorstr(f'Summary ({name})')} 👉 {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
     # CONSOLE.print(Panel.fit(f"[green b]{name} 👉 {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}"), style="")
 
 
