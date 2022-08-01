@@ -54,18 +54,16 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[x] RKNN C++ deploy code ref
 	[x] pose-estimation(keypoints detection) -> dataloader and model
 
+
 	[ing] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
 	[ing] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
-	
+        
         
     [] one2one: Hungarian Algorithm to re-assign by cost
-    [] many2one: 对没有分配anchor的gt进行分配cost最小的为分配anchor(SimOTA bug)
+    [x] many2one: 对没有分配anchor的gt进行分配cost最小的为分配anchor(SimOTA bug)
 	[] DecoupleH, mAP test; infer time: 0.5ms -> 1.1ms
 	[] 测试完DecoupleH()再进行整合
-
-
-	[] ese block to above results
 
 
 	[] scale hyps with s6 (when done DecoupleH)
