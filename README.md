@@ -53,26 +53,18 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[x] rknn QNT calibration file: support dir(recommend), not only cali.txt
 	[x] RKNN C++ deploy code ref
 	[x] pose-estimation(keypoints detection) -> dataloader and model
-
-
+	[x] many2one: 对没有分配anchor的gt进行分配cost最小的为分配anchor(SimOTA bug)
+	
 	[ing] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
 	[ing] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
         
         
-    [] one2one: Hungarian Algorithm to re-assign by cost
-    [x] many2one: 对没有分配anchor的gt进行分配cost最小的为分配anchor(SimOTA bug)
-	[] DecoupleH, mAP test; infer time: 0.5ms -> 1.1ms
-	[] 测试完DecoupleH()再进行整合
-
-
-	[] scale hyps with s6 (when done DecoupleH)
+    	[] End2End => NMS Free
+  
 	[] OC_tracker with kpt
-	[] RKNN inference in DetectMultiBackend()
 	[] pose-estimation(keypoints detection) -> head and loss
 	[] Mac calculations in model_info()
 	[] ObjectBox
-	[] ATSS +  TOOD
-	[] end to end => NMS
 	[] segmentation
 
