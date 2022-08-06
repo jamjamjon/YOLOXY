@@ -1,13 +1,14 @@
 
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-path: ../datasets/coco-kpts  # dataset root dir
-train: images/val2017  # train images 
-val: images/val2017 # val images 
+path: ../datasets/coco-kpts-100  # dataset root dir
+train: images  # train images 
+val: images # val images 
 
 # Classes & Keypoints
 nc: 1  # number of classes
 nk: 17   # number of keypoints (optional, 0 => bbox detection; > 0 => keypoints)
-kpt_task: human-pose
+kpt_task: human-pose-2d
+
 
 names: [ 'person']

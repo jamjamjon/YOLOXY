@@ -17,6 +17,46 @@ from utils.general import CONSOLE, LOGGER, colorstr
 
 
 
+
+class OKSLoss(nn.Module):
+    # Objects Keypoints Similarity Loss
+
+    def __init__(self, sigmas):
+        super().__init__()
+
+        self.sigmas = sigmas
+        self.BCEkpt = nn.BCEWithLogitsLoss(reduction="none")  # kpt
+        LOGGER.info(f"{colorstr('Keypoints Sigmas: ')} {[x for x in sigmas.numpy()]}")
+
+
+    def forward(self, pkpt, tkpt, tbox, alpha=1.0, beta=2.0):
+
+        # x, y, conf
+        pkpt_x, pkpt_y, pkpt_score = pkpt[:, 0::3], pkpt[:, 1::3], pkpt[:, 2::3]
+        tkpt_x, tkpt_y = tkpt[:, 0::2], tkpt[:, 1::2]   
+
+        # loss of kpts conf => visibility
+        tkpt_mask = (tkpt[:, 0::2] != 0)     # visibilty flag are used as GT
+        lkpt_conf = self.BCEkpt(pkpt_score, tkpt_mask.float()).mean(axis=1)
+        
+        # loss of kpts => oks
+        d = (pkpt_x - tkpt_x) ** 2 + (pkpt_y - tkpt_y) ** 2   # L2 distance
+        s = torch.prod(tbox[:, -2:], dim=1, keepdim=True)  # scale(area) of GT bbox 
+        kpt_loss_factor = (torch.sum(tkpt_mask != 0) + torch.sum(tkpt_mask == 0)) / torch.sum(tkpt_mask != 0)
+
+        # https://github.com/TexasInstruments/edgeai-yolov5/blob/yolo-pose/utils/loss.py 
+        # official: lambda_kpt = 0.1, lambda_kpt_conf = 0.5, lambda_box = 0.05, lambda_cls = 0.5
+        lkpt = kpt_loss_factor * ((1 - torch.exp(-d / (s * (4 * self.sigmas ** 2) + 1e-9))) * tkpt_mask).mean(axis=1)
+
+        # deprecated.
+        # oks = torch.exp(-d / (s * (4 * self.sigmas) + 1e-9))   
+        # lkpt = kpt_loss_factor * ((1 - oks ** 2) * tkpt_mask).mean(axis=1)
+
+        return lkpt * alpha + lkpt_conf * beta
+
+
+
+
 class ComputeLoss:
     # SimOTA
     def __init__(self, model):
@@ -36,14 +76,21 @@ class ComputeLoss:
         self.BCEobj = nn.BCEWithLogitsLoss(reduction="none")   # TODO: add pos_weights=None
         self.L1box = nn.L1Loss(reduction="none")
         if self.nk > 0:
-            self.BCEkpt = nn.BCEWithLogitsLoss(reduction="none")  # kpt
+            # self.BCEkpt = nn.BCEWithLogitsLoss(reduction="none")  # kpt
+            kpts_weights = self.hyp.get('kpt_weights', None)
+            if kpts_weights is None:
+                kpts_weights = (torch.tensor([.01] * self.nk)).to(self.device)
+            else:
+                kpts_weights = (torch.tensor(kpts_weights)).to(self.device)
+                assert len(kpts_weights) == self.nk, "Number of kpts weights not matched with self.nk!"
+            self.OKSkpt = OKSLoss(kpts_weights)
 
 
     def __call__(self, p, targets):
         # p: {(bs, 1, 80, 80, no), (bs, 1, 40, 40, no), ...}
         # targets: { num_object, 6 + no_kpt(idx, cls, xywh, kpts(optional)) }
 
-        # init loss
+        # loss item init
         lcls = torch.zeros(1, device=self.device)
         lobj = torch.zeros(1, device=self.device)
         lbox = torch.zeros(1, device=self.device) 
@@ -57,33 +104,26 @@ class ComputeLoss:
             finalists_masks, num_finalists
         ) = self.build_targets(p, targets)
 
-        # Compute loss
+        # compute loss
         lbox += (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, SIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
         lbox_l1 += (self.L1box(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists
         lobj += (self.BCEobj(pobj.view(-1, 1), tobj * 1.0)).sum() / num_finalists
         lcls += (self.BCEcls(pcls.view(-1, self.nc)[finalists_masks], tcls)).sum() / num_finalists
-
-        # kpt loss
-        if self.nk > 0 and pkpt is not None and tkpt is not None:
-
+        if self.nk > 0 and pkpt is not None and tkpt is not None:   # kpt loss
             # -------------------------
-            # human pose use OKS loss
-            # TODO: loss weights
+            #   OKS Loss for kpt  
+            #   TODO: Wingloss or SmoothL1 loss, ... for other kpts task 
             # -------------------------
-            lkpt_, lkpt_conf = self.pose_oks_loss(pkpt.view(-1, self.no_kpt)[finalists_masks], tkpt, tbox)
-            lkpt += (1.0 * lkpt_.sum() / num_finalists) + (2.0 * lkpt_conf.sum() / num_finalists)  
-
-            # -------------------------------------------------------
-            # other keypoints task better use Wingloss or other loss
-            # -------------------------------------------------------
+            lkpt += self.OKSkpt(pkpt.view(-1, self.no_kpt)[finalists_masks], tkpt, tbox).sum() / num_finalists
 
 
-        # weight loss
+        # loss weighted
         lbox *= self.hyp['box']    # self.hyp.get('box', 5.0)    
+        lbox_l1 *= self.hyp['box_l1']    # self.hyp.get('box_l1', 1.0)    
         lbox += lbox_l1
         lcls *= self.hyp['cls']    # self.hyp.get('cls', 1.0)
         lobj *= self.hyp['obj']    # self.hyp.get('obj', 1.0)
-        lkpt *= self.hyp['kpt']    # self.hyp.get('kpt', 2.0)    
+        lkpt *= self.hyp['kpt']    # self.hyp.get('kpt', 5.5)    
 
 
         return lbox + lobj + lcls + lkpt, torch.cat((lbox, lobj, lcls, lkpt)).detach()  
@@ -448,30 +488,3 @@ class ComputeLoss:
 
         return num_anchor_assigned, pred_ious_this_matching, matched_gt_inds, finalists_mask
 
-
-    # human pose oks loss
-    def pose_oks_loss(self, pkpt, tkpt, tbox):
-
-        kps_sigmas = torch.tensor([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62, .62, 1.07,
-                                   1.07, .87, .87, .89, .89]) / 10.0  # Key points of human body
-        
-        sigmas = kps_sigmas.to(self.device)
-        pkpt_x, pkpt_y, pkpt_score = pkpt[:, 0::3], pkpt[:, 1::3], pkpt[:, 2::3]
-        tkpt_x, tkpt_y = tkpt[:, 0::2], tkpt[:, 1::2]
-
-        # loss kpt conf
-        tkpt_mask = (tkpt[:, 0::2] > 0)     # visibilty flag are used as GT
-        lkpt_conf = self.BCEkpt(pkpt_score, tkpt_mask.float()).mean(axis=1)
-        
-        # OKS based loss
-        d = (pkpt_x - tkpt_x) ** 2 + (pkpt_y - tkpt_y) ** 2
-        s = torch.prod(tbox[:, -2:], dim=1, keepdim=True)  # scale derived from bbox gt
-        kpt_loss_factor = (torch.sum(tkpt_mask != 0) + torch.sum(tkpt_mask == 0)) / torch.sum(tkpt_mask != 0)
-        oks = torch.exp(-d / (s * (4 * sigmas) + 1e-9))
-        lkpt = kpt_loss_factor * ((1 - oks ** 2) * tkpt_mask).mean(axis=1)
-
-        return lkpt, lkpt_conf
-
-    # TODO
-    def wingloss(self):
-        pass

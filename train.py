@@ -94,20 +94,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     train_path, val_path = data_dict['train'], data_dict['val']
     nc = 1 if single_cls else int(data_dict['nc'])  # number of classes in data.yaml
     nk = data_dict.get('nk', 0)   # number of keypoints in data.yaml, 0 default => bbox detection
-    
-    # kpts = kpts or (nk > 0)  # nk > 0 or kpts ==> keypoints detection
-    # do_kpts = nk > 0  # nk > 0 ==> keypoints detection
 
-    # TODO: mission check
-    # if nk == 0:
-    #     assert mission == 'det', "nk=0  =>  mission=det"
-    # elif nk == -1:
-    #     assert mission == 'seg', "nk=-1  =>  mission=seg"
-    # else:
-    #     assert mission == 'kpt', "nk!=-1  =>  mission=kpt"
-    # mission = 'kpt' if nk > 0 else 'det'
-    # LOGGER.info(f"{colorstr('Mission: ')} {mission}")
-        
+    # TODO: kpts & segs dict?
+    kpt_task = data_dict.get('kpt_task', 'human-pose-2d')
+    kpt_dicts = {'nk': nk, 'task': kpt_task}
 
     names = ['item'] if single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
     assert len(names) == nc, f'{len(names)} names found for nc={nc} dataset in {data}'  # check
