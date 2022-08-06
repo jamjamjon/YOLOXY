@@ -173,7 +173,8 @@ def run(
                                        rect=rect,
                                        workers=workers,
                                        prefix=colorstr(f'{task}: '),
-                                       nk=model.nk      # kpt
+                                       # nk=model.nk      # kpt
+                                       kpt_kit=model.kpt_kit
                                        )[0]
 
 

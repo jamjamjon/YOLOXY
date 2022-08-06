@@ -335,7 +335,7 @@ def attempt_load(weights, device=None, inplace=True, fuse=True):
     if len(model) == 1:
         return model[-1]  # return model
     print(f'Ensemble created with {weights}\n')
-    for k in 'names', 'nc', 'yaml', 'nk':         
+    for k in 'names', 'nc', 'yaml', 'nk', 'kpt_kit':         
         setattr(model, k, getattr(model[0], k))
     model.stride = model[torch.argmax(torch.tensor([m.stride.max() for m in model])).int()].stride  # max stride
     assert all(model[0].nc == m.nc for m in model), f'Models have different class counts: {[m.nc for m in model]}'

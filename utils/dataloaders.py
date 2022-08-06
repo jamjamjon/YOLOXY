@@ -106,7 +106,8 @@ def create_dataloader(path,
                       quad=False,
                       prefix='',
                       shuffle=False,
-                      nk=0,
+                      # nk=0,
+                      kpt_kit=None,
                       ):
     if rect and shuffle:
         LOGGER.warning('WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False')
@@ -125,7 +126,8 @@ def create_dataloader(path,
             pad=pad,
             image_weights=image_weights,
             prefix=prefix,
-            nk=nk
+            # nk=nk
+            kpt_kit=kpt_kit,
             )
 
     batch_size = min(batch_size, len(dataset))
@@ -415,7 +417,9 @@ class LoadImagesAndLabels(Dataset):
                  stride=32,
                  pad=0.0,
                  prefix='',
-                 nk=0):
+                 # nk=0,
+                 kpt_kit=None,
+                 ):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -428,10 +432,13 @@ class LoadImagesAndLabels(Dataset):
         self.albumentations = Albumentations() if augment else None
 
         # kpt
-        self.nk = nk
-
-        # TODO: for different number of keypoints task and asymetric object
-        self.flip_index = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
+        self.kpt_kit = kpt_kit
+        if kpt_kit is not None:
+            self.nk = self.kpt_kit['nk']   
+            self.kpt_lr_flip_idx = self.kpt_kit['lr_flip_idx']  # For different number of keypoints task and asymetric object       
+        else:
+            self.nk = 0
+            self.kpt_lr_flip_idx = []
 
 
         try:
@@ -664,8 +671,8 @@ class LoadImagesAndLabels(Dataset):
                     labels[:, 1] = 1 - labels[:, 1]
                     if self.nk > 0:   # kpt
                         labels[:, 5::2] = (1 - labels[:, 5::2]) * (labels[:, 5::2] != 0)
-                        labels[:, 5::2] = labels[:, 5::2][:, self.flip_index]
-                        labels[:, 6::2] = labels[:, 6::2][:, self.flip_index]
+                        labels[:, 5::2] = labels[:, 5::2][:, self.kpt_lr_flip_idx]
+                        labels[:, 6::2] = labels[:, 6::2][:, self.kpt_lr_flip_idx]
 
             # Cutouts
             # labels = cutout(img, labels, p=0.5)
@@ -839,7 +846,8 @@ class LoadImagesAndLabels(Dataset):
                                            shear=self.hyp['shear'],
                                            perspective=self.hyp['perspective'],
                                            border=self.mosaic_border,
-                                           nk=self.nk,)  # border to remove
+                                           nk=self.nk
+                                           )  # border to remove
 
         return img9, labels9
 

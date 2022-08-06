@@ -95,9 +95,17 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     nc = 1 if single_cls else int(data_dict['nc'])  # number of classes in data.yaml
     nk = data_dict.get('nk', 0)   # number of keypoints in data.yaml, 0 default => bbox detection
 
-    # TODO: kpts & segs dict?
-    kpt_task = data_dict.get('kpt_task', 'human-pose-2d')
-    kpt_dicts = {'nk': nk, 'task': kpt_task}
+    # kpt kit : nk, kpt_lr_flip_idx
+    if nk > 0:
+        kpt_lr_flip_idx = data_dict.get('kpt_lr_flip_idx', None)   
+        if hyp['fliplr'] != 0.0:    # use fliplr but not set lr flip index
+            assert kpt_lr_flip_idx is not None, "You must set ketpoints left-right flip index when using < hyp['fliplr'] > for Data Augmentation"
+        else:   # not using fliplr, set default
+            kpt_lr_flip_idx = [x for x in range(nk)]
+        kpt_kit = {'nk': nk, 'lr_flip_idx': kpt_lr_flip_idx}
+    else:
+        kpt_kit = None    
+
 
     names = ['item'] if single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
     assert len(names) == nc, f'{len(names)} names found for nc={nc} dataset in {data}'  # check
@@ -230,7 +238,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                               quad=opt.quad,
                                               prefix=colorstr('TRAIN DATASETS: '),
                                               shuffle=True,
-                                              nk=nk,
+                                              # nk=nk,
+                                              kpt_kit=kpt_kit,
                                               )
     mlc = int(np.concatenate(dataset.labels, 0)[:, 0].max())  # max label class
     nb = len(train_loader)  # number of batches
@@ -250,7 +259,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                        workers=workers * 2,
                                        pad=0.5,
                                        prefix=colorstr('VAL DATASETS: '), 
-                                       nk=nk,
+                                       # nk=nk,
+                                       kpt_kit=kpt_kit,
                                        )[0]
 
         if not resume:
@@ -331,11 +341,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             train_loader.sampler.set_epoch(epoch)
         pbar = enumerate(train_loader)
         if RANK in {-1, 0}:
-            pbar = tqdm(pbar, total=nb, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5')  # progress bar
-        optimizer.zero_grad()
-
+            job = 'Keypoints Detection' if nk > 0 else 'Object Detection'
+            pbar = tqdm(pbar, total=nb, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5', postfix=job)  # progress bar
 
         # batch -------------------------------------------------------------
+        optimizer.zero_grad()
         for i, (imgs, targets, paths, _) in pbar:  
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
@@ -405,7 +415,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         if RANK in {-1, 0}:
             # mAP
             callbacks.run('on_train_epoch_end', epoch=epoch)
-            ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights', 'nk'])     # add kpt
+            ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights', 'nk', 'kpt_kit'])     # add kpt
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
                 results, maps, _ = val.run(data_dict,

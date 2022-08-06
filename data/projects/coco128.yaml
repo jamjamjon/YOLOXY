@@ -1,7 +1,7 @@
 # parent
 # ├── YOLOX-BETA
 # └── datasets
-#     └── coco128  ← downloads here (7 MB)
+#     └── coco128  ←  here 
 
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]

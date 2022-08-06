@@ -1,4 +1,7 @@
-
+# parent
+# ├── YOLOX-BETA
+# └── datasets
+#     └── coco-kpts  ← here 
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
 path: ../datasets/coco-kpts  # dataset root dir
@@ -8,6 +11,6 @@ val: images/val2017 # val images
 # Classes & Keypoints
 nc: 1  # number of classes
 nk: 17   # number of keypoints (optional, 0 => bbox detection; > 0 => keypoints)
-kpt_task: human-pose
+kpt_lr_flip_idx: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]   # left-right flip for kpts, required when using ==> hyp['fliplr']
 
-names: [ 'person']
+names: ['person']

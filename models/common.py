@@ -440,9 +440,8 @@ class DetectX(nn.Module):
         self.grid = [torch.zeros(1)] * self.nl    # TODO: init grid 用于保存每层的每个网格的坐标
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
         self.m = nn.ModuleList(HydraHead(x, self.nc, self.na, self.nk) for x in ch)  # hydra head
-
-        if self.nk > 0:
-            LOGGER.info(f"{colorstr(f'Detection with keypoints.')} Num_keypoints: {self.nk}")
+        # if self.nk > 0:
+        #     LOGGER.info(f"{colorstr(f'Detection with keypoints.')} Num_keypoints: {self.nk}")
 
 
     def forward(self, x):
@@ -539,6 +538,7 @@ class DetectMultiBackend(nn.Module):
             stride = max(int(model.stride.max()), 32)  # model stride
             # tag = model.tag if hasattr(model, 'tag') else 'YOLOV5' # model tag: yolov5/x
             nk = model.nk if hasattr(model, 'nk') else 0 
+            kpt_kit = model.kpt_kit if hasattr(model, 'kpt_kit') else None 
             names = model.module.names if hasattr(model, 'module') else model.names  # get class names
             model.half() if fp16 else model.float()
             self.model = model  # explicitly assign for to(), cpu(), cuda(), half()
