@@ -26,7 +26,7 @@ class OKSLoss(nn.Module):
 
         self.sigmas = sigmas
         self.BCEkpt = nn.BCEWithLogitsLoss(reduction="none")  # kpt
-        LOGGER.info(f"{colorstr('Keypoints Sigmas: ')} {[x for x in sigmas.numpy()]}")
+        LOGGER.info(f"{colorstr('Keypoints Sigmas: ')} {[x for x in sigmas.cpu().numpy()]}")
 
 
     def forward(self, pkpt, tkpt, tbox, alpha=1.0, beta=2.0):
