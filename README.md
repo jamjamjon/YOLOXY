@@ -1,4 +1,4 @@
-# YOLOXY: Common 2D computer vision task with YOLO.
+# YOLOXY: Common 2D(XY) computer vision task with YOLO.
 To be continued...
 
 
