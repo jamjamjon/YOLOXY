@@ -1,4 +1,4 @@
-# YOLOX-BETA:
+# YOLOXY: Common 2D computer vision task with YOLO.
 To be continued...
 
 
