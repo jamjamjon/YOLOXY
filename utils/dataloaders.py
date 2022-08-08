@@ -440,7 +440,6 @@ class LoadImagesAndLabels(Dataset):
             self.nk = 0
             self.kpt_lr_flip_idx = []
 
-
         try:
             f = []  # image files
             for p in path if isinstance(path, list) else [path]:

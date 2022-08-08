@@ -79,10 +79,14 @@ class ComputeLoss:
             # self.BCEkpt = nn.BCEWithLogitsLoss(reduction="none")  # kpt
             kpts_weights = self.hyp.get('kpt_weights', None)
             if kpts_weights is None:
+                LOGGER.info(f"{colorstr('magenta', 'b', 'Attention: ')}Weights of Each Keypoint Is Not Set. Do It At => data/hyps/x.yaml")
                 kpts_weights = (torch.tensor([.01] * self.nk)).to(self.device)
             else:
-                kpts_weights = (torch.tensor(kpts_weights)).to(self.device)
-                assert len(kpts_weights) == self.nk, "Number of kpts weights not matched with self.nk!"
+                if len(kpts_weights) == self.nk:
+                    kpts_weights = (torch.tensor(kpts_weights)).to(self.device)
+                else:
+                    kpts_weights = (torch.tensor([.01] * self.nk)).to(self.device)
+                # assert len(kpts_weights) == self.nk, f"Number of kpts weights {len(kpts_weights)} not matched with self.nk {self.nk}!"
             self.OKSkpt = OKSLoss(kpts_weights)
 
 
@@ -399,6 +403,7 @@ class ComputeLoss:
         is_in_boxes_all = is_in_boxes.sum(dim=0) > 0
 
         # in fixed region
+        # TODO: x percentage of width or height, rather than fixed value: 2.5 
         center_radius = 2.5
         t_bboxes_tl = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) - center_radius * grids_stride.unsqueeze(0)
         t_bboxes_br = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) + center_radius * grids_stride.unsqueeze(0)
