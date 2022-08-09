@@ -80,12 +80,12 @@ class ComputeLoss:
             kpts_weights = self.hyp.get('kpt_weights', None)
             if kpts_weights is None:
                 LOGGER.info(f"{colorstr('magenta', 'b', 'Attention: ')}Weights of Each Keypoint Is Not Set. Do It At => data/hyps/x.yaml")
-                kpts_weights = (torch.tensor([.01] * self.nk)).to(self.device)
+                kpts_weights = (torch.tensor([.1] * self.nk)).to(self.device)
             else:
                 if len(kpts_weights) == self.nk:
                     kpts_weights = (torch.tensor(kpts_weights)).to(self.device)
                 else:
-                    kpts_weights = (torch.tensor([.01] * self.nk)).to(self.device)
+                    kpts_weights = (torch.tensor([.1] * self.nk)).to(self.device)
                 # assert len(kpts_weights) == self.nk, f"Number of kpts weights {len(kpts_weights)} not matched with self.nk {self.nk}!"
             self.OKSkpt = OKSLoss(kpts_weights)
 
