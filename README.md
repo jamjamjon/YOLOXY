@@ -61,10 +61,9 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
         
         
     	[] End2End => NMS Free
-  
+ 
 	[] OC_tracker with kpt
 	[] pose-estimation(keypoints detection) -> head and loss
-	[] Mac calculations in model_info()
 	[] ObjectBox
 	[] segmentation
 
