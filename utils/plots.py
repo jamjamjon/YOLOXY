@@ -120,8 +120,8 @@ class Annotator:
                                 conf = kpts[step * idx + 2]
                                 if conf < kpt_thresh:   # filter kpt which conf < 0.5
                                     continue
-                            r_ = max(5, self.lw)  # radius
-                            self.draw.ellipse((x-r_, y-r_, x+r_, y+r_), 'yellow', 'green', width=2)
+                            r_ = max(3, self.lw)  # radius
+                            self.draw.ellipse((x-r_, y-r_, x+r_, y+r_), 'yellow', 'green', width=1)
 
                     # draw connection
                     for idx, kpt_pair in enumerate(skeleton_pair):
@@ -186,8 +186,8 @@ class Annotator:
                                 conf = kpts[step * idx + 2]
                                 if conf < kpt_thresh:   # filter kpt which conf < 0.5
                                     continue
-                            r_ = max(4, self.lw)  # radius
-                            cv2.circle(self.im, (int(x), int(y)), int(r_), (0, 255, 255), -1)
+                            r_ = max(2, self.lw)  # radius
+                            cv2.circle(self.im, (int(x), int(y)), int(r_), (0, 255, 0), -1)
 
                     # draw connection
                     for idx, kpt_pair in enumerate(skeleton_pair):
