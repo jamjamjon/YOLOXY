@@ -239,15 +239,27 @@ def model_info(model, verbose=False, img_size=640):
         from thop import profile
         stride = max(int(model.stride.max()), 32) if hasattr(model, 'stride') else 32
         img = torch.zeros((1, model.yaml.get('ch', 3), stride, stride), device=next(model.parameters()).device)  # input
-        flops = profile(deepcopy(model), inputs=(img,), verbose=False)[0] / 1E9 * 2  # stride GFLOPs
+        
+        # MACs, params = thop.profile() 
+        # MACs stands for multiply–accumulate operation that performs a <- a + (b x c).
+        # one MACs has one mul and one add. That is why in many places FLOPs is nearly two times as MACs.
+        # https://github.com/Lyken17/pytorch-OpCounter/tree/master/benchmark#macs-flops-what-is-the-difference
+        flops = profile(deepcopy(model), inputs=(img,), verbose=False)[0] / 1E9 * 2  # stride GFLOPs, Roughly GFLOPs = 2 * GMACs
         img_size = img_size if isinstance(img_size, list) else [img_size, img_size]  # expand if int/float
         fs = ', %.1f GFLOPs' % (flops * img_size[0] / stride * img_size[1] / stride)  # 640x640 GFLOPs
     except Exception:
         fs = ''
 
+    # GFLOPs => hw * k*k*c1*c2
+    # MemoryAccessCost => hw(c1+c2) + k*(c1*c2)
+    # try:
+    #     from torchstat import stat
+    #     stat(deepcopy(model), (3, 640, 640))
+    # except Exception:
+    #     pass
+
     name = Path(model.yaml_file).stem.replace('yolov5', 'YOLOv5') if hasattr(model, 'yaml_file') else 'Model'
     LOGGER.info(f"{colorstr(f'Summary ({name})')} 👉 {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
-    # CONSOLE.print(Panel.fit(f"[green b]{name} 👉 {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}"), style="")
 
 
 def scale_img(img, ratio=1.0, same_shape=False, gs=32):  # img(16,3,256,416)
