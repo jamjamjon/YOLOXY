@@ -69,6 +69,7 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[] X_focal loss
 	[] Tasked alignment assignment in compute_loss()
 	[] assigner => compute_loss()
+	[] metrics of kpts for saving model 
  
 	[] OC_tracker with kpt
 	[] pose-estimation(keypoints detection) -> head and loss
