@@ -65,9 +65,10 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
         
     	[] End2End => NMS Free
 
-	[] different branch has different branch head(TOOD, TAL)
-	[] Tasked alignment assignment
+	[x] different branch has different branch head(TOOD, TAL)
 	[] X_focal loss
+	[] Tasked alignment assignment in compute_loss()
+	[] assigner => compute_loss()
  
 	[] OC_tracker with kpt
 	[] pose-estimation(keypoints detection) -> head and loss
