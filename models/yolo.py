@@ -346,6 +346,11 @@ if __name__ == '__main__':
     # print_args(vars(opt))
 
     device = select_device(opt.device)   # device
+    imgsz = opt.imgsz
+
+    # if opt.batch_size == -1:  # single-GPU only, estimate best batch size
+    #         batch_size = check_train_batch_size(model, imgsz, amp)
+
     im = torch.rand(opt.batch_size, 3, opt.imgsz, opt.imgsz).to(device)     # dummpy input
 
 

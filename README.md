@@ -59,8 +59,15 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[ing] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
         
+
+       [] AssertionError: >>> Matching matrix still has conflicts!!!!!!!
+
         
     	[] End2End => NMS Free
+
+	[] different branch has different branch head(TOOD, TAL)
+	[] Tasked alignment assignment
+	[] X_focal loss
  
 	[] OC_tracker with kpt
 	[] pose-estimation(keypoints detection) -> head and loss

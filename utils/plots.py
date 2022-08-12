@@ -121,7 +121,7 @@ class Annotator:
                                 if conf < kpt_thresh:   # filter kpt which conf < 0.5
                                     continue
                             r_ = max(3, self.lw)  # radius
-                            self.draw.ellipse((x-r_, y-r_, x+r_, y+r_), 'yellow', 'green', width=1)
+                            self.draw.ellipse((x-r_, y-r_, x+r_, y+r_), 'cyan', 'green', width=1)
 
                     # draw connection
                     for idx, kpt_pair in enumerate(skeleton_pair):

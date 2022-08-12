@@ -1,8 +1,11 @@
 # face keypoints datasets => https://zhuanlan.zhihu.com/p/508111468 , https://blog.csdn.net/john_bh/article/details/106015984?spm=1001.2014.3001.5502
-
+# parent
+# ├── YOLOXY
+# └── datasets
+#     └── FADID-FACE-19  ←  here 
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-path: ../datasets/face-19  # dataset root dir
+path: ../datasets/FADID-FACE-19  # dataset root dir
 train: images  # train images (relative to 'path') 128 images
 val: images  # val images (relative to 'path') 128 images
 test:  # test images (optional)

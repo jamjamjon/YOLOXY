@@ -364,6 +364,7 @@ class Decouple(nn.Module):
                           c.view(bs, self.na, self.nc, ny, nx)), 2).view(bs, -1, ny, nx)
 
 
+# TODO: different branch has different branch head
 class HeadBranch(nn.Module):
     # Head Branch Conv Block Before Output
     def __init__(self, c1, c2):

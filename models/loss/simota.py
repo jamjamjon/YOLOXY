@@ -115,7 +115,7 @@ class ComputeLoss:
         lcls += (self.BCEcls(pcls.view(-1, self.nc)[finalists_masks], tcls)).sum() / num_finalists
         if self.nk > 0 and pkpt is not None and tkpt is not None:   # kpt loss
             # -------------------------
-            #   OKS Loss for kpt  
+            #   OKS Loss for kpts  
             #   TODO: Wingloss or SmoothL1 loss, ... for other kpts task 
             # -------------------------
             lkpt += self.OKSkpt(pkpt.view(-1, self.no_kpt)[finalists_masks], tkpt, tbox).sum() / num_finalists
@@ -129,9 +129,7 @@ class ComputeLoss:
         lobj *= self.hyp['obj']    # self.hyp.get('obj', 1.0)
         lkpt *= self.hyp['kpt']    # self.hyp.get('kpt', 5.5)    
 
-
         return lbox + lobj + lcls + lkpt, torch.cat((lbox, lobj, lcls, lkpt)).detach()  
-
 
 
     # build predictions
@@ -276,7 +274,7 @@ class ComputeLoss:
                     tbox_, 
                     tbox_l1_,
                     tkpt_
-                 ) = self.get_assignments(t_bboxes, t_classes, p_bboxes, p_classes, p_objs, t_kpts)
+                 ) = self.get_assignments(p_bboxes, p_classes, p_objs, t_bboxes, t_classes, t_kpts)
                 
                 # num of assigned anchors in one batch
                 num_finalists += num_anchor_assigned    
@@ -312,12 +310,12 @@ class ComputeLoss:
 
     # SimOTA
     @torch.no_grad()
-    def get_assignments(self, t_bboxes, t_classes, p_bboxes, p_classes, p_objs, t_kpts=None):
+    def get_assignments(self, p_bboxes, p_classes, p_objs, t_bboxes, t_classes, t_kpts=None):
 
         num_objects = t_bboxes.shape[0]   # number of gt object per image
 
         # 1. get candidates: {a fixed center region} + {gt box} 
-        candidates_mask, is_in_boxes_and_center = self.get_in_boxes_info(t_bboxes)
+        candidates_mask, is_in_boxes_and_center = self.get_candidates(t_bboxes)
 
         # 2. pick preds in fixed center region, and get bbox, cls, obj
         p_bboxes = p_bboxes[candidates_mask]
@@ -345,7 +343,7 @@ class ComputeLoss:
         # 5. cost
         cost = (1.0 * pair_wise_cls_loss        # 1.0
                 + 3.0 * pair_wise_ious_loss     # 3.0
-                + 100000.0 * (~is_in_boxes_and_center))     # neg samples, 
+                + 10000.0 * (~is_in_boxes_and_center))     # neg samples, 
 
         # 6. assign different k positive samples for every gt.
         (   
@@ -385,7 +383,7 @@ class ComputeLoss:
 
 
     # get candidates: a fixed center region
-    def get_in_boxes_info(self, t_bboxes):
+    def get_candidates(self, t_bboxes):
         num_object = t_bboxes.shape[0]  # number of objects
         grids_stride = self.expanded_strides[0]  # grid stride
         grids_xy = self.xy_shifts[0] * grids_stride  # grid coords in each scale: [0, 1, 2, ...] => [0, 8, 16, ...]
@@ -404,7 +402,7 @@ class ComputeLoss:
 
         # in fixed region
         # TODO: x percentage of width or height, rather than fixed value: 2.5 
-        center_radius = 2.5
+        center_radius = 2.5   # strides=[8, 16, 32] ; 2.5 * strides=[20, 40, 80] = grid_size! that's why set to 2.5
         t_bboxes_tl = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) - center_radius * grids_stride.unsqueeze(0)
         t_bboxes_br = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) + center_radius * grids_stride.unsqueeze(0)
 
@@ -452,29 +450,82 @@ class ComputeLoss:
             matching_matrix[cost_argmin, anchor_matching_gt > 1] = 1
 
         #--------------------------------------------------------------------------
-        # Fix simota bug(many2one): assign 1 anchor for gts those have no assigned anchor cause by solving conflict  
+        # Fix simota bug(many2one): assign 1 anchor for gts those have no assigned anchor caused by solving conflict  
         #--------------------------------------------------------------------------
         if (matching_matrix.sum(1) == 0).sum() > 0:    # some gt(row) has no assigned anchors
-
-            # cost matrix: not assigned gts (rows)
             cost_non_assigned = cost[matching_matrix.sum(1) == 0, :]
+            cols_assigned = matching_matrix.sum(0) > 0
+            
+            # print(f'cols_assigned: {cols_assigned}')
+            idx_assigned = []
+            for i, x in enumerate(cols_assigned):
+                if x.item() is True:
+                    idx_assigned.append(i)    
+                    # print(f'col has assigned =====> {i}')
+            # print(f'============> idx col assigned:\n {idx_assigned}')
 
             # assign bigger enough cost value(1e10) for already assigned anchors
-            cost_non_assigned[:, matching_matrix.sum(0) > 0] = 1e10    
+            # print(f"==> cost_non_assigned( > 0) {cost_non_assigned[:, matching_matrix.sum(0) > 0]}")
+            # print(f"==> cost_non_assigned( == 0) {cost_non_assigned[:, matching_matrix.sum(0) == 0]}")
+            # print(f"==> (min) cost_non_assigned {torch.min(cost_non_assigned, dim=0)[0]}")
+            # print(f"==> (min) cost_non_assigned {torch.min(cost_non_assigned, dim=0)}")
+            
+            cost_non_assigned[:, matching_matrix.sum(0) > 0] = 1e+10  
+            # print(f"after ==> cost_non_assigned( > 0) {cost_non_assigned[:, matching_matrix.sum(0) > 0]}")
+            # print(f"after ==> cost_non_assigned( == 0) {cost_non_assigned[:, matching_matrix.sum(0) == 0]}")
+            # for i, row in enumerate(cost_non_assigned):
+            #     for j, col in enumerate(row):
+            #         if col == 1e+10:
+            #             print(f'cost assigned col (1e10) =====> {(i, j)}')
+
+
+
+            # print('=====>cost_non_assigned\n', cost_non_assigned)
 
             # do linear sum assignment 
             cost_non_assigned_cpu = cost_non_assigned.cpu().numpy()
             i, j = linear_sum_assignment(cost_non_assigned_cpu)
 
+            for idx, jj in enumerate(j):
+                if jj in idx_assigned:
+                    print('===> conflict!!!!! :::::=> ', jj)
+                    print('=====> i,j (cost_non_assigned_cpu) ', cost_non_assigned_cpu[i[idx]][j[idx]])
+                    print('=====> j (cost) ', cost[:, j[idx]])
+
+
+            # print(f'linear sum assigned: ===> {i, j}')
+
             # create matching matrix non assigned
             matching_matrix_non_assigned = torch.zeros_like(cost_non_assigned, dtype=torch.uint8)
             matching_matrix_non_assigned[i, j] = 1
 
+            # print(f'matching_matrix_non_assigned: ===> {matching_matrix_non_assigned}')
+
+
             # update matching_matrix
             matching_matrix[matching_matrix.sum(1) == 0, :] = matching_matrix_non_assigned
 
+
         # check again if matching matrix still has conflicts
-        assert (matching_matrix.sum(0) > 1).sum() == 0, '>>> Matching matrix still has conflicts!!!!!!!'
+        # TODO: if still has conflicts, re-assign
+        assert (matching_matrix.sum(1) == 0).sum() == 0, '>>> Not all GTs have been assigned!'
+
+
+        # assert (matching_matrix.sum(0) > 1).sum() == 0, '>>> Matching matrix still has conflicts!!!!!!!'
+        # deal with conflict: filter out the anchor point has been assigned to many gts
+        anchor_matching_gt = matching_matrix.sum(0)
+        if (anchor_matching_gt > 1).sum() > 0:
+            print('Matching matrix still has conflicts!!!!!!!')
+            print(matching_matrix.sum(0))
+            print(matching_matrix.sum(0) > 1)
+            print((matching_matrix.sum(0) > 1).sum())
+
+            print(f'===> conflict cols:\n {cost[:, anchor_matching_gt > 1]}')
+
+            # exit()
+            # _, cost_argmin = torch.min(cost[:, anchor_matching_gt > 1], dim=0)
+            # matching_matrix[:, anchor_matching_gt > 1] *= 0
+            # matching_matrix[cost_argmin, anchor_matching_gt > 1] = 1
         #--------------------------------------------------------------------------
 
         # get the number of anchor points which have been assigned to all gts
