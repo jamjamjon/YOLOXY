@@ -58,17 +58,16 @@ python export.py  --weights weights/best.pt --img 640 --simplify  --include rknn
 	[ing] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
 	[ing] DBBConv(), Inception_like_conv(), Xception_like_conv() 
 	[ing] DBB => Diverse Branch Block: Building a Convolution as an Inception-like Unit
-        
-
-       [] AssertionError: >>> Matching matrix still has conflicts!!!!!!!
-
-        
+            
     	[] End2End => NMS Free
-
+	
+	[x] Tasked alignment assignment in compute_loss()	
+	[] add KPTs cost to cost matrix in order to align all task
+	[] yoloe backbone
 	[x] different branch has different branch head(TOOD, TAL)
-	[] X_focal loss
-	[] Tasked alignment assignment in compute_loss()
-	[] assigner => compute_loss()
+	[] X_focal loss => vari-focal loss in cls and obj; d-focal loss in box 
+
+	[] Code refactor: assigner => compute_loss()
 	[] metrics of kpts for saving model 
  
 	[] OC_tracker with kpt
