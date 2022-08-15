@@ -10,6 +10,7 @@ import rich
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torch import nn
 
 
 def fitness(x):
@@ -211,6 +212,35 @@ class ConfusionMatrix:
     def print(self):
         for i in range(self.nc + 1):
             print(' '.join(map(str, self.matrix[i])))
+
+
+# TODO
+def pairwise_kpts_oks(sigmas, p_kpts, t_kpts, t_bboxes, alpha=1.0, beta=2.0):
+
+    if len(p_kpts) * len(t_kpts) == 0:
+        return torch.tensor([])
+    oks_mat = torch.zeros((len(t_kpts), len(p_kpts)))
+
+    # compute oks between each detection and ground truth object
+    for i, t_kpt in enumerate(t_kpts):
+        tkpt_x, tkpt_y = t_kpt[0::2], t_kpt[1::2]   
+        tkpt_mask = (tkpt_x != 0)     # visibilty flag are used as GT
+
+        for j, p_kpt in enumerate(p_kpts):
+            pkpt_x, pkpt_y, pkpt_score = p_kpt[0::3], p_kpt[1::3], p_kpt[2::3]   
+            lkpt_conf = nn.BCEWithLogitsLoss(reduction="none")(pkpt_score, tkpt_mask.float()).mean() # .mean(axis=1)
+
+            d = (pkpt_x - tkpt_x) ** 2 + (pkpt_y - tkpt_y) ** 2   # L2 distance
+            s = torch.prod(t_bboxes[i][-2:], dim=0, keepdim=True)  # scale(area) of GT bbox 
+            lkpt = (torch.exp(-d / (s * (4 * sigmas ** 2) + 1e-9)) * tkpt_mask).mean()
+            
+            # oks_mat[i, j] = (lkpt * alpha + lkpt_conf * beta)
+            oks_mat[i, j] = lkpt * alpha
+
+
+    return oks_mat
+
+
 
 
 # TODO: refine

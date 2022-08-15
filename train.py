@@ -282,10 +282,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         model = smart_DDP(model)
 
     # Model attributes  TODO
-    # nl = de_parallel(model).model[-1].nl  # number of detection layers (to scale hyps)
-    # hyp['box'] *= 3 / nl  # scale to layers
-    # hyp['cls'] *= nc / 80 * 3 / nl  # scale to classes and layers
-    # hyp['obj'] *= (imgsz / 640) ** 2 * 3 / nl  # scale to image size and layers
+    nl = de_parallel(model).model[-1].nl  # number of detection layers (to scale hyps)
+    hyp['box'] *= 3 / nl  # scale to layers
+    hyp['box_l1'] *= 3 / nl  # scale to layers
+    hyp['cls'] *= nc / 80 * 3 / nl  # scale to classes and layers
+    hyp['obj'] *= (imgsz / 640) ** 2 * 3 / nl  # scale to image size and layers
     # hyp['label_smoothing'] = opt.label_smoothing  # in compute loss, not used in OTA
 
     # Attach attrs to model
@@ -328,7 +329,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
 
         # close mosaic in the last 5% epochs
-        if (epoch == int(epochs * 0.9)) and (epoch >= 20):   # at least train 50 epochs 
+        if (epoch == int(epochs * 0.85)) and (epoch >= 20):  
             LOGGER.info(f"{colorstr('> Mosaic augmentation closed.')}")
             dataset.mosaic = False  # close mosaic
 
@@ -442,7 +443,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # Save model
             if (not nosave) or final_epoch:  # if save
                 ckpt = {
-                    # 'tag': model.tag,   # add model tag
                     'epoch': epoch,
                     'best_fitness': best_fitness,
                     'model': deepcopy(de_parallel(model)).half(),

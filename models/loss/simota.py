@@ -12,7 +12,7 @@ import math
 from scipy.optimize import linear_sum_assignment
 
 from utils.torch_utils import de_parallel
-from utils.metrics import bbox_iou, pairwise_bbox_iou
+from utils.metrics import bbox_iou, pairwise_bbox_iou, pairwise_kpts_oks
 from utils.general import CONSOLE, LOGGER, colorstr
 from models.loss.losses import OKSLoss
 
@@ -49,6 +49,7 @@ class ComputeLoss:
                     kpts_weights = (torch.tensor([.1] * self.nk)).to(self.device)
                 # assert len(kpts_weights) == self.nk, f"Number of kpts weights {len(kpts_weights)} not matched with self.nk {self.nk}!"
             self.OKSkpt = OKSLoss(kpts_weights)
+            self.kpts_sigmas = kpts_weights
 
 
     def __call__(self, p, targets):
@@ -72,7 +73,7 @@ class ComputeLoss:
         # compute loss
         lbox += (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, SIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
         lbox_l1 += (self.L1box(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists
-        lobj += (self.BCEobj(pobj.view(-1, 1), tobj * 1.0)).sum() / num_finalists
+        lobj += (self.BCEobj(pobj.view(-1, 1), tobj)).sum() / num_finalists
         lcls += (self.BCEcls(pcls.view(-1, self.nc)[finalists_masks], tcls)).sum() / num_finalists
         if self.nk > 0 and pkpt is not None and tkpt is not None:   # kpt loss
             # -------------------------
@@ -124,7 +125,6 @@ class ComputeLoss:
                 kpt_conf_grids = torch.zeros_like(xy_shift)[..., 0:1]
                 kpt_grids = torch.cat((xy_shift, kpt_conf_grids), dim = 2).repeat(1, 1, self.nk)
                 pred[..., -3 * self.nk:] = (pred[..., -3 * self.nk:] + kpt_grids) * self.stride[k]
-
             # ------------------------------------------------------------------
 
             # stride between grid 
@@ -219,12 +219,17 @@ class ComputeLoss:
                 p_classes = pcls[idx]       # pred cls
                 p_objs = pobj[idx]          # pred obj
 
+
                 # keypoint: de-scale to origin image size  !!!!
                 if self.nk > 0:
+                    p_kpts = pkpt[idx]          # pred kpts
+
                     imgsz_kpt = torch.Tensor([[input_w, input_h] * self.nk]).type_as(targets)  # [[640, 640, 640, 640]]
                     t_kpts = targets[idx, :nt, -2 * self.nk:].mul_(imgsz_kpt)  # t_kpts
                 else:
                     t_kpts = None
+                    p_kpts = None          # pred kpts
+                        
 
                 # do label assignment: SimOTA 
                 (
@@ -235,7 +240,7 @@ class ComputeLoss:
                     tbox_, 
                     tbox_l1_,
                     tkpt_
-                 ) = self.get_assignments(p_bboxes, p_classes, p_objs, t_bboxes, t_classes, t_kpts)
+                 ) = self.get_assignments(p_bboxes, p_classes, p_objs, t_bboxes, t_classes, t_kpts, p_kpts)
                 
                 # num of assigned anchors in one batch
                 num_finalists += num_anchor_assigned    
@@ -271,7 +276,7 @@ class ComputeLoss:
 
     # SimOTA
     @torch.no_grad()
-    def get_assignments(self, p_bboxes, p_classes, p_objs, t_bboxes, t_classes, t_kpts=None):
+    def get_assignments(self, p_bboxes, p_classes, p_objs, t_bboxes, t_classes, t_kpts=None, p_kpts=None):
 
         num_objects = t_bboxes.shape[0]   # number of gt object per image
 
@@ -284,10 +289,14 @@ class ComputeLoss:
         obj_preds_ = p_objs[candidates_mask]
         num_in_boxes_anchor = p_bboxes.shape[0]
 
+        if p_kpts is not None:
+            p_kpts = p_kpts[candidates_mask]   # [num, 3*nk]
+
+
         # 3. iou loss => iou(gts, preds), for calculate dynamic_k
         pair_wise_ious = pairwise_bbox_iou(t_bboxes, p_bboxes, box_format='xywh')
         pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
-        
+
         # 4. cls loss = cls * obj
         gt_cls_per_image = (F.one_hot(t_classes.to(torch.int64), self.nc)
                             .float()
@@ -301,10 +310,20 @@ class ComputeLoss:
             pair_wise_cls_loss = F.binary_cross_entropy(cls_preds_.sqrt_(), gt_cls_per_image, reduction="none").sum(-1)
         del cls_preds_, obj_preds_
 
-        # 5. cost
-        cost = (1.0 * pair_wise_cls_loss        # 1.0
-                + 3.0 * pair_wise_ious_loss     # 3.0
-                + 10000.0 * (~is_in_boxes_and_center))     # neg samples, 
+
+        # # kpt loss matrix (OKS)
+        # if t_kpts is not None and p_kpts is not None:
+        #     pair_wise_kpts = pairwise_kpts_oks(self.kpts_sigmas, p_kpts, t_kpts, t_bboxes, alpha=1.0, beta=2.0)
+        #     pairwise_kpts_oks_loss = -torch.log(pair_wise_kpts + 1e-8)
+        #     pairwise_kpts_oks_loss = pairwise_kpts_oks_loss.to(self.device)
+
+
+        # 5. cost ==> cls * 1.0 + iou * 3.0 + neg * 1e+5
+        cost = (1.0 * pair_wise_cls_loss + 3.0 * pair_wise_ious_loss + 10000.0 * (~is_in_boxes_and_center))  
+        del pair_wise_ious_loss, pair_wise_cls_loss
+        # if t_kpts is not None and p_kpts is not None:
+        #     cost += pairwise_kpts_oks_loss * 5.0        
+        #     del pairwise_kpts_oks_loss
 
         # 6. assign different k positive samples for every gt.
         (   
@@ -313,7 +332,7 @@ class ComputeLoss:
             matched_gt_inds,
             finalists_mask     
         ) = self.dynamic_k_matching(cost, pair_wise_ious, t_classes, candidates_mask)
-        del pair_wise_cls_loss, cost, pair_wise_ious, pair_wise_ious_loss
+        del cost, pair_wise_ious, 
 
         # 7. empty cuda cache
         torch.cuda.empty_cache() 
@@ -323,7 +342,7 @@ class ComputeLoss:
             # tcls, tbox, tobj
             tcls_ = t_classes[matched_gt_inds]
             tcls_ = F.one_hot(tcls_.to(torch.int64), self.nc) * pred_ious_this_matching.unsqueeze(-1)
-            tobj_ = finalists_mask.unsqueeze(-1)
+            tobj_ = finalists_mask.unsqueeze(-1)  * 1.0
             tbox_ = t_bboxes[matched_gt_inds]
 
             # tbox_l1, do scale

@@ -460,17 +460,16 @@ class HydraXHead(nn.Module):
         self.stem = Conv(c1, c_, 1)     # stem
         self.cv2 = AsymConv(c_, c_, 3)  # TODO: keep ?     Conv(c_, c_, 3)
 
-        self.conv_cls = Branch(c_, na * nc)     # cls branch
-        self.conv_box = Branch(c_, 4 * na)      # box branch => x,y,w,h
-        self.conv_obj = Branch(c_, 1 * na)      # obj branch
+        self.conv_cls = Branch(c_, nc * na, add=True)     # cls branch
+        self.conv_box = Branch(c_, 4 * na, add=False)      # box branch => x,y,w,h
+        self.conv_obj = Branch(c_, 1 * na, add=False)      # obj branch
         if self.nk > 0:
-            self.conv_kpt = Branch(c_, na * nk * 3)      # kpt branch => x,y,conf
+            self.conv_kpt = Branch(c_, 3 * nk * na, add=False)      # kpt branch => x,y,conf
         
     def forward(self, x):
         bs, nc, ny, nx = x.shape  # BCHW
 
         x = self.cv2(self.stem(x))
-
         x_box, x_obj, x_cls = self.conv_box(x), self.conv_obj(x), self.conv_cls(x)      # output => box, obj, cls
         if self.nk > 0:
             x_kpt = self.conv_kpt(x)     # output => kpt
@@ -502,11 +501,10 @@ class DetectX(nn.Module):
         self.no = self.no_det + self.no_kpt    # number of outputs per anchor,  keypoint: (xi, yi, i_conf)
         self.nl = len(ch)  # number of detection layers, => 3
         self.na = self.anchors = 1    # number of anchors 
-        self.grid = [torch.zeros(1)] * self.nl    # TODO: init grid 用于保存每层的每个网格的坐标
+        self.grid = [torch.zeros(1)] * self.nl    # girds for every scales
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
         # self.m = nn.ModuleList(HydraHead(x, self.nc, self.na, self.nk) for x in ch)  # hydra head
         self.m = nn.ModuleList(HydraXHead(x, self.nc, self.na, self.nk) for x in ch)  # new hydra X head
-
 
 
 
@@ -568,7 +566,6 @@ class DetectX(nn.Module):
                     y = torch.cat((xy, wh, y[..., 4:]), -1)
 
                 z.append(y.view(bs, -1, self.no))
-
 
         return x_raw if self.export_raw else x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)  # x not do sigmoid(), while z did
 
