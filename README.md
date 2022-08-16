@@ -5,7 +5,7 @@
 - [ ] Instance Segmentation 
 
 
-## Pretained Models
+## Pretained Models(To Be Continued...)
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
 |---|---|---|---|---|---
 |YOLOv5n-SiLU(v6.1)      		|640 |28.0 |1.9 |4.5 | **5.2**
