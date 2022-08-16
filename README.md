@@ -32,10 +32,9 @@ __Object Detection__ & __Keypoints Detection__
 python detect.py --weights s.pt	--source 0  # webcam
 				  img.jpg  # image
 				  vid.mp4  # video
-				  path/  # directory
+				  ./data/images/  # image directory
 				  'path/*.jpg'  # glob
-				  'https://...'  # https
-				  'rtsp://admin:admin12345@192.168.0.188'  # RTSP, RTMP, HTTP stream
+				  'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP, RTMP, HTTP stream
 ```
 <img src="./data/docs/demo/face-5-demo.jpg" height="280"> <img src="./data/docs/demo/FADID-FACE-demo.bmp" height="280">
 
