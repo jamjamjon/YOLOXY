@@ -125,7 +125,7 @@ python export.py  --weights s.pt --img 640 --simplify  --include rknn --cali dat
 - [x] RKNN C++ deploy code ref
 - [x] pose-estimation(keypoints detection) -> dataloader and model
 - [x] pose-estimation(keypoints detection) -> head and loss
-- [x] many2one: 对没有分配anchor的gt进行分配cost最小的为分配anchor(SimOTA bug)
+- [x] SimOTA bug fix(many2one): re-assign anchors for GTs whose anchors assigned before just have been removed
 - [x] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
 - [x] Tasked alignment assignment in compute_loss()	
 - [x] add KPTs cost to cost matrix in order to align all task
