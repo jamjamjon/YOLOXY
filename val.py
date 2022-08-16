@@ -182,7 +182,7 @@ def run(
     confusion_matrix = ConfusionMatrix(nc=nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ('%20s' + '%11s' * 6) % ('CLASS', 'IMAGES', 'LABLES', 'p', 'R', 'mAP@.5', 'mAP@.5:.95')
+    s = ('%20s' + '%11s' * 6) % ('CLASS', 'nIMAGES', 'nLABLES', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
     # TODO: mloss setting remove loss

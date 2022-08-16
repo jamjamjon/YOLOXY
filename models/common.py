@@ -581,14 +581,14 @@ class DetectMultiBackend(nn.Module):
 
 
         super().__init__()
-        from models.experimental import attempt_load  # scoped to avoid circular import
+        from models.experimental import attempt_load, attempt_download  # scoped to avoid circular import
 
 
         w = str(weights[0] if isinstance(weights, list) else weights)
         # pt, jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs = self.model_type(w)  # get backend
         pt, onnx, rknn = self.model_type(w)  # get backend
 
-        # w = attempt_download(w)  # download if not local
+        w = attempt_download(w)  # download if not local
         # fp16 &= (pt or jit or onnx or engine) and device.type != 'cpu'  # FP16
         fp16 &= (pt or onnx) and device.type != 'cpu'  # FP16
         stride, names = 32, [f'class{i}' for i in range(1000)]  # assign defaults

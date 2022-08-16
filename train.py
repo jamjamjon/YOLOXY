@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 import val  # for end-of-epoch mAP
+from utils.downloads import attempt_download
 from models.experimental import attempt_load
 from models.yolo import Model
 from utils.autobatch import check_train_batch_size
@@ -115,8 +116,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     check_suffix(weights, '.pt')  # check weights
     pretrained = weights.endswith('.pt')
     if pretrained:
-        # with torch_distributed_zero_first(LOCAL_RANK):
-        #     weights = attempt_download(weights)  # download if not found locally
+        with torch_distributed_zero_first(LOCAL_RANK):
+            weights = attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
         model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, nk=nk).to(device)  # create
         exclude = ['anchor'] if (cfg or hyp.get('anchors')) and not resume else []  # exclude keys
@@ -335,7 +336,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
         # mloss setting
         mloss = torch.zeros(3 + 1, device=device)  # mean losses
-        LOGGER.info(('\n' + '%10s' * (4 + mloss.shape[0])) % ('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS', 'KPT'))
+        LOGGER.info(('\n' + '%10s' * (4 + mloss.shape[0])) % ('EPOCH', 'GPU_MEM', 'SIZE', 'nLABELS', 'BOX', 'OBJ', 'CLS', 'KPT'))
 
         # train_loader
         if RANK != -1:

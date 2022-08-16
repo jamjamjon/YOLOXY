@@ -244,7 +244,8 @@ def model_info(model, verbose=False, img_size=640):
         # MACs stands for multiply–accumulate operation that performs a <- a + (b x c).
         # one MACs has one mul and one add. That is why in many places FLOPs is nearly two times as MACs.
         # https://github.com/Lyken17/pytorch-OpCounter/tree/master/benchmark#macs-flops-what-is-the-difference
-        flops = profile(deepcopy(model), inputs=(img,), verbose=False)[0] / 1E9 * 2  # stride GFLOPs, Roughly GFLOPs = 2 * GMACs
+        macs = profile(deepcopy(model), inputs=(img,), verbose=False)[0] / 1E9  # stride GFLOPs, Roughly GFLOPs = 2 * GMACs
+        flops = macs * 2  # stride GFLOPs, Roughly GFLOPs = 2 * GMACs
         img_size = img_size if isinstance(img_size, list) else [img_size, img_size]  # expand if int/float
         fs = ', %.1f GFLOPs' % (flops * img_size[0] / stride * img_size[1] / stride)  # 640x640 GFLOPs
     except Exception:

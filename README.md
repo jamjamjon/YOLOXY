@@ -53,7 +53,6 @@ To be continued...
 	[] X_focal loss => vari-focal loss in cls and obj; d-focal loss in box 
     [] End2End => NMS Free
 
-    [] check AMP
 	
 	[x] Tasked alignment assignment in compute_loss()	
 	[x] add KPTs cost to cost matrix in order to align all task
