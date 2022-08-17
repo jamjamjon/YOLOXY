@@ -296,7 +296,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in (Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
                  BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x,
-                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv   # update
+                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv, FocusDown   # update
                  ):
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
@@ -403,18 +403,33 @@ if __name__ == '__main__':
     if opt.check:
         x = torch.rand(1, 3, 640, 640).to(device)
 
+        # p = PatchifyStem(3, 64, 3, 3)
+        # print(p)
+
+        # focus = Focus(3, 64, 3, 1)
+        # print(focus)
+
+        ifocus = FocusDown(3, 64, 2, 2, p=0)
+        print(ifocus)
+
+
+        # spd = SPD()
+
+        _ = profile(input=x, ops=[ifocus], n=50, device=device)
+
+
         # fused RepConv
-        repconv = RepConv(3, 64, 3, 2).to(device)
+        # repconv = RepConv(3, 64, 3, 2).to(device)
         # repconv.fuse_repconv()
 
-        y = repconv(x)
-        print(y.shape)
+        # y = repconv(x)
+        # print(y.shape)
 
-        repconv2 = RepConv(3, 64, 3, 1).to(device)
-        spd = SPD()
+        # repconv2 = RepConv(3, 64, 3, 1).to(device)
+        # spd = SPD()
 
-        y2 = repconv(x)
-        print(spd(y2).shape)
+        # y2 = repconv(x)
+        # print(spd(y2).shape)
 
 
         # _ = profile(input=x, ops=[repconv], n=10, device=device)

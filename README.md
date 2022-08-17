@@ -11,10 +11,11 @@
 |YOLOv5n-SiLU(v6.1)      		|640 |28.0 |1.9 |4.5 | **5.2**
 |**YOLOXY-Nano-half-head**    		|640 |**30.4**|**1.83**|**4.4** | 6.0
 |**YOLOXY-Nano**      			|640 |**31.4**|**3.05**|**7.7** | 6.1
+|**YOLOXY-n**      			|640 |**training...**|**2.82**|**5.5** | 7.0
 |YOLOv5s-SiLU(v6.1) 			|640 |37.4 |**7.23** |**16.53** |**7.7** 
 |YOLOX-s 				|640 |**40.5** |**9.0** |**26.8** | - 
-|**YOLOXY-S-Conv** 			|640 |39.3 |7.6  |17.9|-
-|**[YOLOXY-S-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.6 |19.7	| -
+|**YOLOXY-n-Conv** 			|640 |39.3 |7.6  |17.9|-
+|**[YOLOXY-n-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.67 |19.7	| 9.5
 
 
 ## Installation
@@ -131,8 +132,7 @@ python export.py  --weights s.pt --img 640 --simplify  --include rknn --cali dat
 - [x] add KPTs cost to cost matrix in order to align all task
 - [x] different branch has different branch head(TOOD, TAL)
 
-
-- [ ] more backbones experiments(PP-YOLOE, Transformer-based)    
+- [ ] more backbones experiments(PP-YOLOE, Transformer-based, ConvNext, ...)    
 - [ ] DBB, DBBConv() => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 - [ ] X_focal loss => vari-focal loss in cls and obj; d-focal loss in box 
 - [ ] End2End => NMS Free

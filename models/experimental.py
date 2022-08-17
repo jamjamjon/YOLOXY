@@ -9,31 +9,60 @@ from models.common import *
 from utils.downloads import attempt_download
 
 
+class PatchifyStem(nn.Module):
+    def __init__(self, c1, c2, k=3, s=3, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        self.conv = Conv(c1, c2, k, s, p, g, act)
+
+    def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
+        return self.conv(x)
+
+
+
 
 class Focus(nn.Module):
     # Focus wh information into c-space
+    # Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                 input                  output
+    # 7040       1.468         0.132         1.736         2.868        (1, 3, 640, 640)       (1, 64, 320, 320)
+
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super().__init__()
         self.conv = Conv(c1 * 4, c2, k, s, p, g, act)
-        # self.contract = Contract(gain=2)
 
     def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
         return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
-        # return self.conv(self.contract(x))
+
+
+class FocusDown(nn.Module):
+    # invert
+    # Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                 input                  output
+    # 896         0.2097         0.132         1.083         2.382        (1, 3, 640, 640)       (1, 64, 320, 320)
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        self.conv = Conv(c1 * 4, c2, k, s, p, g, act=False)  # 1x1 Conv with no activation
+
+    def forward(self, x):  
+        return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
+
+
+# class FocusDown(nn.Module):
+#     def __init__(self, c1, c2, k=2, s=2, p=0, g=1, act=False):  # ch_in, ch_out, kernel, stride, padding, groups
+#         super().__init__()
+#         self.conv = Conv(c1, c2, k, s, p, g, act)  # 1x1 Conv with no activation
+
+#     def forward(self, x):  
+#         return self.conv(x)
 
 
 class SPD(nn.Module):
     # Changing the dimension of the Tensor
+
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
          return torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1)
-#         size_tensor = x.size()
-#         return torch.cat([x[...,0:size_tensor[2]//2,0:size_tensor[3]//2],
-#                          x[...,0:size_tensor[2]//2,size_tensor[3]//2:],
-#                          x[...,size_tensor[2]//2:,0:size_tensor[3]//2],
-#                          x[...,size_tensor[2]//2:,size_tensor[3]//2:]  ],1)
+
 
 
 
@@ -205,16 +234,16 @@ class SPP(nn.Module):
             warnings.simplefilter('ignore')  # suppress torch 1.9.0 max_pool2d() warning
             return self.cv2(torch.cat([x] + [m(x) for m in self.m], 1))
 
-class Focus(nn.Module):
-    # Focus wh information into c-space
-    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
-        super().__init__()
-        self.conv = Conv(c1 * 4, c2, k, s, p, g, act)
-        # self.contract = Contract(gain=2)
+# class Focus(nn.Module):
+#     # Focus wh information into c-space
+#     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+#         super().__init__()
+#         self.conv = Conv(c1 * 4, c2, k, s, p, g, act)
+#         # self.contract = Contract(gain=2)
 
-    def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
-        return self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
-        # return self.conv(self.contract(x))
+#     def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
+#         return self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
+#         # return self.conv(self.contract(x))
 
 
 class GhostConv(nn.Module):
