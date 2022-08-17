@@ -16,44 +16,23 @@ from utils.metrics import bbox_iou, pairwise_bbox_iou
 from utils.general import CONSOLE, LOGGER, colorstr
 
 
-class VarifocalLoss(nn.Module):
 
-    def __init__(self):
-        super(VarifocalLoss, self).__init__()
+class VariFL(nn.Module):
+    """Varifocal Loss <https://arxiv.org/abs/2008.13367>"""
+    def __init__(self, gamma=2.0, alpha=0.75, reduction="mean"): 
+        super().__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+        self.reduction = reduction
 
-    def forward(self,
-                pred_score,
-                gt_score,
-                label,
-                alpha=0.75,
-                gamma=2.0):
-        """
-        仅适用于当前任务。调用binary_cross_entropy不进行reduction。后乘上weight，再进行sum
-        :param pred_score:
-        :param gt_score:
-        :param label:
-        :param alpha:
-        :param gamma:
-        :return:
-        """
-        weight = alpha * pred_score.pow(gamma) * (1 - label) + gt_score * label
-        loss = (F.binary_cross_entropy(pred_score, gt_score, reduction='none') * weight).sum()
-
+    def forward(self, pred, target):
+        assert pred.size() == target.size()
+        pred_sigmoid = pred.sigmoid()
+        target = target.type_as(pred)
+        focal_weight = target * (target > 0.0).float() + self.alpha * (pred_sigmoid - target).abs().pow(self.gamma) * (target <= 0.0).float()
+        loss = F.binary_cross_entropy_with_logits(pred, target, reduction=self.reduction) * focal_weight
         return loss
 
-
-class FocalLoss(nn.Module):
-    def __init__(self):
-        super(FocalLoss, self).__init__()
-
-    def forward(self, score, label, alpha=0.25, gamma=2.0):
-        weight = (score - label).pow(gamma)
-        if alpha > 0:
-            alpha_t = alpha * label + (1 - alpha) * (1 - label)
-            weight *= alpha_t
-        loss = F.binary_cross_entropy(
-            score, label, weight=weight, reduction='sum')
-        return loss
 
 
 
