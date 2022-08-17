@@ -33,13 +33,11 @@ class ComputeLoss:
             setattr(self, x, getattr(self.head, x))
         
         # Define criteria
-        self.BCEcls = nn.BCEWithLogitsLoss(reduction="none")   # reduction="mean" default, pos_weights=None
-        # self.BCEcls = VariFL(gamma=2.0, alpha=0.75, reduction="none")   # Vari Focal Loss 
-
-        self.BCEobj = nn.BCEWithLogitsLoss(reduction="none")   # TODO: add pos_weights=None
-        self.L1box = nn.L1Loss(reduction="none")
+        self.LossFn_CLS = VariFL(gamma=2.0, alpha=0.75, reduction="none")   # Vari Focal Loss 
+        # self.LossFn_CLS = nn.BCEWithLogitsLoss(reduction="none")   # reduction="mean" default, pos_weights=None
+        self.LossFn_OBJ = nn.BCEWithLogitsLoss(reduction="none")   # TODO: add pos_weights=None
+        self.L1_BOX = nn.L1Loss(reduction="none")
         if self.nk > 0:
-            # self.BCEkpt = nn.BCEWithLogitsLoss(reduction="none")  # kpt
             kpts_weights = self.hyp.get('kpt_weights', None)
             if kpts_weights is None:
                 LOGGER.info(f"{colorstr('magenta', 'b', 'Attention: ')}Weights of Each Keypoint Is Not Set. Do It At => data/hyps/x.yaml")
@@ -50,7 +48,7 @@ class ComputeLoss:
                 else:
                     kpts_weights = (torch.tensor([.1] * self.nk)).to(self.device)
                 # assert len(kpts_weights) == self.nk, f"Number of kpts weights {len(kpts_weights)} not matched with self.nk {self.nk}!"
-            self.OKSkpt = OKSLoss(kpts_weights)
+            self.LossFn_KPT = OKSLoss(kpts_weights)
             self.kpts_sigmas = kpts_weights
 
 
@@ -74,15 +72,15 @@ class ComputeLoss:
 
         # compute loss
         lbox += (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, SIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
-        lbox_l1 += (self.L1box(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists
-        lobj += (self.BCEobj(pobj.view(-1, 1), tobj)).sum() / num_finalists
-        lcls += (self.BCEcls(pcls.view(-1, self.nc)[finalists_masks], tcls)).sum() / num_finalists
+        lbox_l1 += (self.L1_BOX(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists
+        lobj += (self.LossFn_OBJ(pobj.view(-1, 1), tobj)).sum() / num_finalists
+        lcls += (self.LossFn_CLS(pcls.view(-1, self.nc)[finalists_masks], tcls)).sum() / num_finalists
         if self.nk > 0 and pkpt is not None and tkpt is not None:   # kpt loss
             # -------------------------
             #   OKS Loss for kpts  
             #   TODO: Wingloss or SmoothL1 loss, ... for other kpts task 
             # -------------------------
-            lkpt += self.OKSkpt(pkpt.view(-1, self.no_kpt)[finalists_masks], tkpt, tbox).sum() / num_finalists
+            lkpt += self.LossFn_KPT(pkpt.view(-1, self.no_kpt)[finalists_masks], tkpt, tbox).sum() / num_finalists
 
 
         # loss weighted

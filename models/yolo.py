@@ -311,10 +311,12 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
 
-        # Detect for yolox
-        elif m in (DetectX, ):
-            args.append([ch[x] for x in f])
+        # elif m is SPD:
+        #     c2 = 4 * ch[f]
 
+        elif m in (DetectX, ):  # Detect
+            args.append([ch[x] for x in f])
+            
         elif m is Contract:
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
@@ -344,11 +346,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size h,w')
     parser.add_argument('--batch-size', type=int, default=1, help='total batch size for all GPUs')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml')
     parser.add_argument('--profile', action='store_true', help='profile model speed')
     parser.add_argument('--line-profile', action='store_true', help='profile model speed layer by layer')
-    # parser.add_argument('--test', action='store_true', help='test all yolo*.yaml')
     parser.add_argument('--detail', action='store_true', help='print model')
     parser.add_argument('--fuse', action='store_true', help='fuse model')
     parser.add_argument('--check', action='store_true', help='check ops')
@@ -400,10 +401,24 @@ if __name__ == '__main__':
 
     # playground
     if opt.check:
+        x = torch.rand(1, 3, 640, 640).to(device)
 
-        # # fused RepConv
-        # repconv = RepConv(3, 128, 3, 2)
+        # fused RepConv
+        repconv = RepConv(3, 64, 3, 2).to(device)
         # repconv.fuse_repconv()
+
+        y = repconv(x)
+        print(y.shape)
+
+        repconv2 = RepConv(3, 64, 3, 1).to(device)
+        spd = SPD()
+
+        y2 = repconv(x)
+        print(spd(y2).shape)
+
+
+        # _ = profile(input=x, ops=[repconv], n=10, device=device)
+
 
         # # fused Conv
         # conv = Conv(3, 128, 3, 2)
@@ -430,7 +445,7 @@ if __name__ == '__main__':
 
         # print(type(b))
 
-        x = torch.rand(1, 512, 32, 32).to(device)
+        # x = torch.rand(1, 512, 32, 32).to(device)
         # h = DecoupleH(64, nc=80, na=1, nk=17)
         # d = Decouple(64, nc=80, na=1)
         # print(h)
@@ -439,12 +454,12 @@ if __name__ == '__main__':
 
 
         # [-1, 3, C3xESE, [1024, True]],
-        c3x = C3x(512, 512) 
+        # c3x = C3x(512, 512) 
         # c3xese = C3xESE(512, 512, 1, False) 
-        c3xese = C3xESE(512, 512, ese=True) 
-        print(c3x)
-        print(c3xese)
-        _ = profile(input=x, ops=[c3x, c3xese], n=180, device=device)
+        # c3xese = C3xESE(512, 512, ese=True) 
+        # print(c3x)
+        # print(c3xese)
+        # _ = profile(input=x, ops=[c3x, c3xese], n=180, device=device)
 
 
     # # test all models

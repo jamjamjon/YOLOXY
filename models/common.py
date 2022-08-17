@@ -71,6 +71,8 @@ class RepConv(nn.Module):
         self.conv3x3 = CB(c1, c2, k=k, s=s, p=p, g=g)
         self.conv1x1 = CB(c1, c2, k=1, s=s, p=0, g=g)
         self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+        # self.focus = SPD() if focus is True else nn.Identity()
+
 
     def forward(self, x):
         if hasattr(self, 'fusedconv'):
@@ -78,6 +80,7 @@ class RepConv(nn.Module):
         else:
             y = self.conv1x1(x) + self.conv3x3(x)
         return self.act(y)
+        # return self.focus(self.act(y))
 
     def fuse_repconv(self):
         if not hasattr(self, 'fusedconv'):   
@@ -133,6 +136,7 @@ class AsymConv(nn.Module):
         self.conv1xk = CB(c1, c2, (1, k), s)       # 1 x k Conv
         self.convkx1 = CB(c1, c2, (k, 1), s)       # k x 1 Conv
         self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+        # self.focus = SPD() if focus is True else nn.Identity()
 
 
     def forward(self, x):
@@ -146,6 +150,7 @@ class AsymConv(nn.Module):
             y = y_kxk + y_kx1 + y_1xk
 
         return self.act(y)
+        # return self.focus(self.act(y))
 
 
     def fuse_asymconv(self):
@@ -503,8 +508,8 @@ class DetectX(nn.Module):
         self.na = self.anchors = 1    # number of anchors 
         self.grid = [torch.zeros(1)] * self.nl    # girds for every scales
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
-        # self.m = nn.ModuleList(HydraHead(x, self.nc, self.na, self.nk) for x in ch)  # hydra head
-        self.m = nn.ModuleList(HydraXHead(x, self.nc, self.na, self.nk) for x in ch)  # new hydra X head
+        self.m = nn.ModuleList(HydraHead(x, self.nc, self.na, self.nk) for x in ch)  # hydra head
+        # self.m = nn.ModuleList(HydraXHead(x, self.nc, self.na, self.nk) for x in ch)  # new hydra X head
 
 
 
