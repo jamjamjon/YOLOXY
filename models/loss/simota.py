@@ -14,7 +14,7 @@ from scipy.optimize import linear_sum_assignment
 from utils.torch_utils import de_parallel
 from utils.metrics import bbox_iou, pairwise_bbox_iou, pairwise_kpts_oks
 from utils.general import CONSOLE, LOGGER, colorstr
-from models.loss.losses import OKSLoss
+from models.loss.losses import OKSLoss, VariFL
 
 
 
@@ -34,6 +34,8 @@ class ComputeLoss:
         
         # Define criteria
         self.BCEcls = nn.BCEWithLogitsLoss(reduction="none")   # reduction="mean" default, pos_weights=None
+        # self.BCEcls = VariFL(gamma=2.0, alpha=0.75, reduction="none")   # Vari Focal Loss 
+
         self.BCEobj = nn.BCEWithLogitsLoss(reduction="none")   # TODO: add pos_weights=None
         self.L1box = nn.L1Loss(reduction="none")
         if self.nk > 0:
