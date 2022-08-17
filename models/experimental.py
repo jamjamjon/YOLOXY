@@ -9,17 +9,6 @@ from models.common import *
 from utils.downloads import attempt_download
 
 
-class PatchifyStem(nn.Module):
-    def __init__(self, c1, c2, k=3, s=3, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
-        super().__init__()
-        self.conv = Conv(c1, c2, k, s, p, g, act)
-
-    def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
-        return self.conv(x)
-
-
-
-
 class Focus(nn.Module):
     # Focus wh information into c-space
     # Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                 input                  output
@@ -31,7 +20,6 @@ class Focus(nn.Module):
 
     def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
         return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
-
 
 class FocusDown(nn.Module):
     # invert
@@ -45,13 +33,13 @@ class FocusDown(nn.Module):
         return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
 
 
-# class FocusDown(nn.Module):
-#     def __init__(self, c1, c2, k=2, s=2, p=0, g=1, act=False):  # ch_in, ch_out, kernel, stride, padding, groups
-#         super().__init__()
-#         self.conv = Conv(c1, c2, k, s, p, g, act)  # 1x1 Conv with no activation
+class Patchify(nn.Module):
+    def __init__(self, c1, c2, k=2, p=0, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        self.conv = Conv(c1, c2, k, k, p, g, act)  #  k = s Conv
 
-#     def forward(self, x):  
-#         return self.conv(x)
+    def forward(self, x):  
+        return self.conv(x)
 
 
 class SPD(nn.Module):
@@ -62,8 +50,6 @@ class SPD(nn.Module):
 
     def forward(self, x):
          return torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1)
-
-
 
 
 class SA(nn.Module):
@@ -233,17 +219,6 @@ class SPP(nn.Module):
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')  # suppress torch 1.9.0 max_pool2d() warning
             return self.cv2(torch.cat([x] + [m(x) for m in self.m], 1))
-
-# class Focus(nn.Module):
-#     # Focus wh information into c-space
-#     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
-#         super().__init__()
-#         self.conv = Conv(c1 * 4, c2, k, s, p, g, act)
-#         # self.contract = Contract(gain=2)
-
-#     def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
-#         return self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
-#         # return self.conv(self.contract(x))
 
 
 class GhostConv(nn.Module):

@@ -393,6 +393,7 @@ class HydraHead(nn.Module):
         self.nc = nc    # number of classes
         self.nk = nk    # number of keypoints
 
+
         c_ = min(c1, 256)  # min(c1, nc * na)
         self.cv1 = Conv(c1, c_, 1)      # stem
         # self.cv2 = Conv(c_, c_, 3)    # TODO   
@@ -510,7 +511,6 @@ class DetectX(nn.Module):
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
         self.m = nn.ModuleList(HydraHead(x, self.nc, self.na, self.nk) for x in ch)  # hydra head
         # self.m = nn.ModuleList(HydraXHead(x, self.nc, self.na, self.nk) for x in ch)  # new hydra X head
-
 
 
     def forward(self, x):

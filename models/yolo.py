@@ -296,7 +296,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in (Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
                  BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x,
-                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv, FocusDown   # update
+                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv, FocusDown, Patchify   # update
                  ):
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
@@ -406,16 +406,16 @@ if __name__ == '__main__':
         # p = PatchifyStem(3, 64, 3, 3)
         # print(p)
 
-        # focus = Focus(3, 64, 3, 1)
-        # print(focus)
+        focus = Focus(3, 64, 3, 1)
+        print(focus)
 
-        ifocus = FocusDown(3, 64, 2, 2, p=0)
-        print(ifocus)
+        stem = Patchify(3, 64, 4)
+        print(stem)
 
 
         # spd = SPD()
 
-        _ = profile(input=x, ops=[ifocus], n=50, device=device)
+        _ = profile(input=x, ops=[focus, stem], n=50, device=device)
 
 
         # fused RepConv
