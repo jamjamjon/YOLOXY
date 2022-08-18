@@ -1,3 +1,6 @@
+"""
+non max suppression
+"""
 
 import time
 import torch

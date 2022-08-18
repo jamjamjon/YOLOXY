@@ -1,4 +1,6 @@
-
+"""
+training
+"""
 
 import argparse
 import math
@@ -30,6 +32,7 @@ import val  # for end-of-epoch mAP
 from utils.downloads import attempt_download
 from models.experimental import attempt_load
 from models.yolo import Model
+from models.losses import ComputeLoss
 from utils.autobatch import check_train_batch_size
 from utils.callbacks import Callbacks
 from utils.dataloaders import create_dataloader
@@ -37,14 +40,12 @@ from utils.general import (LOGGER, check_amp, check_dataset, check_file, check_g
                            check_requirements, check_suffix, check_yaml, colorstr, get_latest_run, increment_path,
                            init_seeds, intersect_dicts, labels_to_class_weights, labels_to_image_weights, methods,
                            one_cycle, print_args, strip_optimizer, CONSOLE)
-
 from utils.loggers import Loggers
 from utils.loggers.wandb.wandb_utils import check_wandb_resume
 from utils.metrics import fitness
 from utils.plots import plot_labels, plot_images, plot_lr_scheduler
 from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, torch_distributed_zero_first, 
                                 smart_DDP)
-
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -309,13 +310,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     stopper, stop = EarlyStopping(patience=opt.patience), False
 
     # compute_loss 
-    from models.loss.simota import ComputeLoss
     compute_loss = ComputeLoss(model)  
 
     # before train
     callbacks.run('on_train_start')     
-    LOGGER.info(f"{colorstr('Train Results: ')}{save_dir}\n"
-                f"{colorstr('Train Epochs: ')}{epochs}")
+    LOGGER.info(f"{colorstr('Train Results: ')}{save_dir}")
 
 
     # epoch ------------------------------------------------------------------
@@ -336,7 +335,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
         # mloss setting
         mloss = torch.zeros(3 + 1, device=device)  # mean losses
-        LOGGER.info(('\n' + '%10s' * (4 + mloss.shape[0])) % ('EPOCH', 'GPU_MEM', 'SIZE', 'nLABELS', 'BOX', 'OBJ', 'CLS', 'KPT'))
+        LOGGER.info(('\n' + '%10s' * (4 + mloss.shape[0])) % ('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS', 'KPT'))
 
         # train_loader
         if RANK != -1:
@@ -344,7 +343,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         pbar = enumerate(train_loader)
         if RANK in {-1, 0}:
             job = 'Keypoints Detection' if nk > 0 else 'Object Detection'
-            pbar = tqdm(pbar, total=nb, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5', postfix=job)  # progress bar
+            pbar = tqdm(pbar, total=nb, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5', postfix=colorstr('white', job))  # progress bar
 
         # batch -------------------------------------------------------------
         optimizer.zero_grad()

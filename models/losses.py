@@ -14,14 +14,94 @@ from scipy.optimize import linear_sum_assignment
 from utils.torch_utils import de_parallel
 from utils.metrics import bbox_iou, pairwise_bbox_iou, pairwise_kpts_oks
 from utils.general import CONSOLE, LOGGER, colorstr
-from models.loss.losses import OKSLoss, VariFL
+
+
+
+def distribution_focal_loss(pred, label):
+    """Distribution Focal Loss (DFL) is from `Generalized Focal Loss: Learning
+    Qualified and Distributed Bounding Boxes for Dense Object Detection
+    <https://arxiv.org/abs/2006.04388>`_.
+    Args:
+        pred (torch.Tensor): Predicted general distribution of bounding boxes
+            (before softmax) with shape (N, n+1), n is the max value of the
+            integral set `{0, ..., n}` in paper.
+        label (torch.Tensor): Target distance label for bounding boxes with
+            shape (N,).
+    Returns:
+        torch.Tensor: Loss tensor with shape (N,).
+    """
+    dis_left = label.long()
+    dis_right = dis_left + 1
+    weight_left = dis_right.float() - label
+    weight_right = label - dis_left.float()
+    loss = F.cross_entropy(pred, dis_left, reduction='none') * weight_left \
+        + F.cross_entropy(pred, dis_right, reduction='none') * weight_right
+    return loss
+
+
+class VariFL(nn.Module):
+    """Varifocal Loss <https://arxiv.org/abs/2008.13367>"""
+    def __init__(self, gamma=2.0, alpha=0.75, reduction="mean"): 
+        super().__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+        self.reduction = reduction
+
+    def forward(self, pred, target):
+        assert pred.size() == target.size()
+        pred_sigmoid = pred.sigmoid()
+        target = target.type_as(pred)
+        focal_weight = target * (target > 0.0).float() + self.alpha * (pred_sigmoid - target).abs().pow(self.gamma) * (target <= 0.0).float()
+        loss = F.binary_cross_entropy_with_logits(pred, target, reduction=self.reduction) * focal_weight
+        return loss
+
+
+
+
+class OKSLoss(nn.Module):
+    # Objects Keypoints Similarity Loss
+
+    def __init__(self, sigmas):
+        super().__init__()
+
+        self.sigmas = sigmas
+        self.BCEkpt = nn.BCEWithLogitsLoss(reduction="none")  # kpt
+        LOGGER.info(f"{colorstr('Keypoints Sigmas: ')} {[x for x in sigmas.cpu().numpy()]}")
+
+
+    def forward(self, pkpt, tkpt, tbox, alpha=1.0, beta=2.0):
+
+        # x, y, conf
+        pkpt_x, pkpt_y, pkpt_score = pkpt[:, 0::3], pkpt[:, 1::3], pkpt[:, 2::3]
+        tkpt_x, tkpt_y = tkpt[:, 0::2], tkpt[:, 1::2]   
+
+        # loss of kpts conf => visibility
+        tkpt_mask = (tkpt[:, 0::2] != 0)     # visibilty flag are used as GT
+        lkpt_conf = self.BCEkpt(pkpt_score, tkpt_mask.float()).mean(axis=1)
+        
+        # loss of kpts => oks
+        d = (pkpt_x - tkpt_x) ** 2 + (pkpt_y - tkpt_y) ** 2   # L2 distance
+        s = torch.prod(tbox[:, -2:], dim=1, keepdim=True)  # scale(area) of GT bbox 
+        kpt_loss_factor = (torch.sum(tkpt_mask != 0) + torch.sum(tkpt_mask == 0)) / torch.sum(tkpt_mask != 0)
+
+        # https://github.com/TexasInstruments/edgeai-yolov5/blob/yolo-pose/utils/loss.py 
+        # official: lambda_kpt = 0.1, lambda_kpt_conf = 0.5, lambda_box = 0.05, lambda_cls = 0.5
+        lkpt = kpt_loss_factor * ((1 - torch.exp(-d / (s * (4 * self.sigmas ** 2) + 1e-9))) * tkpt_mask).mean(axis=1)
+
+        # deprecated.
+        # oks = torch.exp(-d / (s * (4 * self.sigmas) + 1e-9))   
+        # lkpt = kpt_loss_factor * ((1 - oks ** 2) * tkpt_mask).mean(axis=1)
+
+        return lkpt * alpha + lkpt_conf * beta
+
+
 
 
 
 class ComputeLoss:
     # SimOTA
     def __init__(self, model):
-        LOGGER.info(f"{colorstr('ComputeLoss: ')} SimOTA")
+        # LOGGER.info(f"{colorstr('ComputeLoss: ')} SimOTA")
 
         self.device = next(model.parameters()).device  # get model device
         self.hyp = model.hyp  # hyperparameters
@@ -33,8 +113,8 @@ class ComputeLoss:
             setattr(self, x, getattr(self.head, x))
         
         # Define criteria
-        self.LossFn_CLS = VariFL(gamma=2.0, alpha=0.75, reduction="none")   # Vari Focal Loss 
-        # self.LossFn_CLS = nn.BCEWithLogitsLoss(reduction="none")   # reduction="mean" default, pos_weights=None
+        # self.LossFn_CLS = VariFL(gamma=2.0, alpha=0.75, reduction="none")   # Vari Focal Loss 
+        self.LossFn_CLS = nn.BCEWithLogitsLoss(reduction="none")   # reduction="mean" default, pos_weights=None
         self.LossFn_OBJ = nn.BCEWithLogitsLoss(reduction="none")   # TODO: add pos_weights=None
         self.L1_BOX = nn.L1Loss(reduction="none")
         if self.nk > 0:
@@ -382,7 +462,7 @@ class ComputeLoss:
 
         # in fixed region
         # TODO: x percentage of width or height, rather than fixed value: 2.5 
-        center_radius = 2.5   # strides=[8, 16, 32] ; 2.5 * strides=[20, 40, 80] = grid_size! that's why set to 2.5
+        center_radius = 2.5   # strides=[8, 16, 32] ; 2.5 * strides=[20, 40, 80] = grid_size! that's why 2.5 is more better
         t_bboxes_tl = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) - center_radius * grids_stride.unsqueeze(0)
         t_bboxes_br = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) + center_radius * grids_stride.unsqueeze(0)
 
@@ -450,7 +530,7 @@ class ComputeLoss:
             # print(f"==> (min) cost_non_assigned {torch.min(cost_non_assigned, dim=0)[0]}")
             # print(f"==> (min) cost_non_assigned {torch.min(cost_non_assigned, dim=0)}")
             
-            cost_non_assigned[:, matching_matrix.sum(0) > 0] = 1e+10  
+            cost_non_assigned[:, matching_matrix.sum(0) > 0] = 1E10  
             # print(f"after ==> cost_non_assigned( > 0) {cost_non_assigned[:, matching_matrix.sum(0) > 0]}")
             # print(f"after ==> cost_non_assigned( == 0) {cost_non_assigned[:, matching_matrix.sum(0) == 0]}")
             # for i, row in enumerate(cost_non_assigned):

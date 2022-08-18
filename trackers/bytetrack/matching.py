@@ -5,7 +5,7 @@ import lap
 from scipy.spatial.distance import cdist
 
 from cython_bbox import bbox_overlaps as bbox_ious
-from models.tracker import kalman_filter
+from trackers.bytetrack import kalman_filter
 import time
 
 def merge_matches(m1, m2, shape):

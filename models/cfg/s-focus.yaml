@@ -47,5 +47,5 @@ neck:
 
 head:
   [
-   [[15, 18, 21], 1, DetectX, [nc, nk]],    # Detect(P3, P4, P5)
+   [[15, 18, 21], 1, Detect, [nc, nk]],    # Detect(P3, P4, P5)
   ]

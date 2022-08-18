@@ -56,26 +56,12 @@ class Loggers():
             'x/lr1',
             'x/lr2']  # params
 
-        # TODO for plain keys
-        # self.keys_xx = [
-        #     'train/box_loss',
-        #     'train/obj_loss',
-        #     'train/cls_loss',  
-        #     'train/other_loss',  # train loss
-        #     'metrics/precision',
-        #     'metrics/recall',
-        #     'metrics/mAP_0.5',
-        #     'metrics/mAP_0.5:0.95',  # metrics
-        #     'x/lr0',
-        #     'x/lr1',
-        #     'x/lr2']  # params
-
         # for 4 loss items keys
         self.keys_x = [
             'train/box_loss',
             'train/obj_loss',
             'train/cls_loss',  
-            'train/other_loss',  # train loss
+            'train/kpt_loss',  # train loss
             'metrics/precision',
             'metrics/recall',
             'metrics/mAP_0.5',
@@ -83,7 +69,7 @@ class Loggers():
             'val/box_loss',
             'val/obj_loss',
             'val/cls_loss',  
-            'val/others_loss',  # val loss
+            'val/kpt_loss',  # val loss
             'x/lr0',
             'x/lr1',
             'x/lr2']  # params
@@ -104,7 +90,6 @@ class Loggers():
 
         # TensorBoard
         s = self.save_dir
-        # if 'tb' in self.include and not self.opt.evolve:
         if 'tb' in self.include:
             prefix = colorstr('TensorBoard: ')
             # prefix = 'TensorBoard: '

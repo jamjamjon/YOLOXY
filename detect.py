@@ -1,11 +1,12 @@
-
+"""
+detect
+"""
 
 import argparse
 import os
 import sys
 from pathlib import Path
 import rich
-
 import torch
 import torch.backends.cudnn as cudnn
 
@@ -24,7 +25,7 @@ from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
 
 # tracking
-from models.tracker.byte_tracker import BYTETracker
+from trackers.bytetrack.byte_tracker import BYTETracker
 
 @torch.no_grad()
 def run(

@@ -1,4 +1,6 @@
-
+"""
+validation
+"""
 
 import argparse
 import json
@@ -182,16 +184,11 @@ def run(
     confusion_matrix = ConfusionMatrix(nc=nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ('%20s' + '%11s' * 6) % ('CLASS', 'nIMAGES', 'nLABLES', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
+    s = ('%20s' + '%11s' * 6) % ('CLASS', 'IMAGES', 'LABLES', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
     # TODO: mloss setting remove loss
     loss = torch.zeros(4, device=device)  # mean losses
-    # if model.tag in ('YOLOX', 'yolox'):
-    #     loss = torch.zeros(4, device=device)  # mean losses
-    # elif model.tag in ('YOLOV5', 'yolov5'):
-    #     loss = torch.zeros(3, device=device)  # mean losses
-
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5')  # progress bar

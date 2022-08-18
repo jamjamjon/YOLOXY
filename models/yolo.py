@@ -1,6 +1,5 @@
 """
-YOLO-specific modules
-
+Parse Model Config & Build YOLO Model 
 Usage:
     $ python path/to/models/yolo.py --cfg xxx.yaml
 """
@@ -23,9 +22,10 @@ if platform.system() != 'Windows':
 
 from models.common import *
 from models.experimental import *
+from models.head import *
 from utils.general import check_version, check_yaml, make_divisible, print_args, LOGGER, CONSOLE
 from utils.plots import feature_visualization
-from utils.torch_utils import (fuse_conv_and_bn, initialize_weights, model_info, profile, scale_img, select_device,
+from utils.torch_utils import (initialize_weights, model_info, profile, scale_img, select_device,
                                time_sync)
 
 try:
@@ -56,7 +56,6 @@ class Model(nn.Module):
             LOGGER.info(f"{colorstr(f'Overriding model.yaml') } nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
 
-
         # num of keypoints
         if nk and nk != self.yaml.get('nk', 0):
             LOGGER.info(f"{colorstr(f'Overriding model.yaml')} nk={self.yaml.get('nk', 0)} with nk={nk}")
@@ -72,7 +71,7 @@ class Model(nn.Module):
 
         # Build strides, anchors
         m = self.model[-1]  # Head 
-        if isinstance(m, (DetectX)):
+        if isinstance(m, (Detect,)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
@@ -146,7 +145,7 @@ class Model(nn.Module):
         return y
 
     def _profile_one_layer(self, m, x, dt):
-        c = isinstance(m, (DetectX))  # is final layer, copy input as inplace fix
+        c = isinstance(m, (Detect, ))  # is final layer, copy input as inplace fix
         o = thop.profile(m, inputs=(x.copy() if c else x,), verbose=False)[0] / 1E9 * 2 if thop else 0  # FLOPs
         t = time_sync()
         for _ in range(10):
@@ -257,6 +256,7 @@ class Model(nn.Module):
         return self
 
 
+# Parse model config
 def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
     # CONSOLE.log(log_locals=True)      # local variables
 
@@ -314,7 +314,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         # elif m is SPD:
         #     c2 = 4 * ch[f]
 
-        elif m in (DetectX, ):  # Detect
+        elif m in (Detect, ):  # Detect
             args.append([ch[x] for x in f])
             
         elif m is Contract:
@@ -387,7 +387,7 @@ if __name__ == '__main__':
 
         # profile forward-backward
         if opt.profile:  
-            results = profile(input=im, ops=[model], n=50)
+            results = profile(input=im, ops=[model], n=100)
 
         # output shape
         if opt.output:
