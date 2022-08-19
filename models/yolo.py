@@ -296,7 +296,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in (Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
                  BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x,
-                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv, FocusDown, Patchify   # update
+                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv, PatchConv, Patchify   # update
                  ):
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
@@ -311,8 +311,8 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
 
-        # elif m is SPD:
-        #     c2 = 4 * ch[f]
+        elif m is SPD:
+            c2 = 4 * ch[f]
 
         elif m in (Detect, ):  # Detect
             args.append([ch[x] for x in f])
@@ -406,24 +406,36 @@ if __name__ == '__main__':
         # p = PatchifyStem(3, 64, 3, 3)
         # print(p)
 
-        focus = Focus(3, 64, 3, 1)
-        print(focus)
+        # focus = Focus(3, 64, 3, 1)
+        # print(focus)
 
-        stem = Patchify(3, 64, 4)
-        print(stem)
+        # stem = Patchify(3, 64, 2).to(device)
+        # print(stem(x).shape)
+
+        spd = SPD().to(device)
+        # print(spd(x).shape)
 
 
-        # spd = SPD()
+        # macs, params = thop.profile(stem.to(device), inputs=(x,), verbose=False)   # stride GFLOPs, Roughly GFLOPs = 2 * GMACs
+        # print(f'macs: {macs / 1e9}')
+        # print(f'params: {params}')
 
-        _ = profile(input=x, ops=[focus, stem], n=50, device=device)
+
+        # _ = profile(input=x, ops=[focus, stem], n=50, device=device)
 
 
         # fused RepConv
-        # repconv = RepConv(3, 64, 3, 2).to(device)
-        # repconv.fuse_repconv()
+        repconv = RepConv(3, 64, 3, 1).to(device)
+        repconv.fuse_repconv()
 
-        # y = repconv(x)
-        # print(y.shape)
+        y = repconv(x)
+        print(y.shape)
+
+        # patch_conv = PatchConv(64).to(device)
+        # y = patch_conv(y)
+
+        y = spd(y)
+        print(y.shape)
 
         # repconv2 = RepConv(3, 64, 3, 1).to(device)
         # spd = SPD()

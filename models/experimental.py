@@ -21,16 +21,19 @@ class Focus(nn.Module):
     def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
         return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
 
-class FocusDown(nn.Module):
-    # invert
-    # Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                 input                  output
-    # 896         0.2097         0.132         1.083         2.382        (1, 3, 640, 640)       (1, 64, 320, 320)
-    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
-        super().__init__()
-        self.conv = Conv(c1 * 4, c2, k, s, p, g, act=False)  # 1x1 Conv with no activation
 
-    def forward(self, x):  
-        return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
+class PatchConv(nn.Module):
+    def __init__(self, c1, c2, k=2, s=2, p=0, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        self.conv = Conv(c1, c2, k, s, p, g, act)  #  k = s Conv
+        self.bn = nn.BatchNorm2d(c2)
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())  # set nn.LeakyReLU()
+
+    def forward(self, x):
+        return self.act(self.bn(self.conv(x)))
+
+    def forward_fuse(self, x):
+        return self.act(self.conv(x))
 
 
 class Patchify(nn.Module):
@@ -44,7 +47,6 @@ class Patchify(nn.Module):
 
 class SPD(nn.Module):
     # Changing the dimension of the Tensor
-
     def __init__(self):
         super().__init__()
 

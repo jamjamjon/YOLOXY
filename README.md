@@ -132,6 +132,8 @@ python export.py  --weights s.pt --img 640 --simplify  --include rknn --cali dat
 - [x] add KPTs cost to cost matrix in order to align all task
 - [x] different branch has different branch head(TOOD, TAL)
 
+- [ ] nano model: baseline, compare with yolov5;
+
 - [ ] torchscript, tensorRT, coreML support   
 - [ ] more backbones experiments(PP-YOLOE, Transformer-based, ConvNext, ...)    
 - [ ] DBB, DBBConv() => Diverse Branch Block: Building a Convolution as an Inception-like Unit
