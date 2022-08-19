@@ -45,7 +45,7 @@ from utils.torch_utils import select_device
 
 
 def run(
-        weights=ROOT / 'yolov5s.pt',  # weights path
+        weights='',  # weights path
         imgsz=640,  # inference size (pixels)
         batch_size=1,  # batch size
         data=ROOT / 'data/coco128.yaml',  # dataset.yaml path

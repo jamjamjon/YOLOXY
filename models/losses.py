@@ -515,6 +515,9 @@ class ComputeLoss:
 
     # assign different k positive samples for every gt 
     def dynamic_k_matching(self, cost, pair_wise_ious, t_classes, candidates_mask):
+
+
+        torch.cuda.empty_cache()    # empty cuda cache at start
         
         ious_in_boxes_matrix = pair_wise_ious   # iou matrix 
 

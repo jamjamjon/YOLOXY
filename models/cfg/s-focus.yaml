@@ -14,7 +14,7 @@ backbone:
   # [from, number, module, args] 
   [
    [-1, 1, Patchify, [64, 4]],              # 0 P1 ~ 2 / 4
-   # [-1, 1, AsymFocus, [128]],              # ch: 64->128
+   # [-1, 1, AsymFocus, [128]],             # ch: 64->128
    [-1, 1, RepConv, [256, 3, 2]],         # 1-P3/8
    [-1, 6, C3xESE, [256, False, True]],   # 2 (c1, c2, n=1, ese=True, shortcut=True)
    [-1, 1, RepConv, [512, 3, 2]],         # 3 -P4/16
