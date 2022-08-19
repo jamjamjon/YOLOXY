@@ -43,6 +43,7 @@ class HeadBranch(nn.Module):
     def forward(self, x):
         return self.conv2d(self.conv(self.dwconv(x)))
         # return self.conv2d(self.conv(x))
+        # return self.conv2d(x)
 
 
 class HydraHead(nn.Module):
@@ -70,6 +71,7 @@ class HydraHead(nn.Module):
     def forward(self, x):
         bs, nc, ny, nx = x.shape  # BCHW
 
+        # x = self.cv1(x)
         x = self.cv2(self.cv1(x))
         x_box, x_obj, x_cls = self.conv_box(x), self.conv_obj(x), self.conv_cls(x)     # box, obj, cls
         if self.nk > 0:
