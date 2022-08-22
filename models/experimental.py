@@ -9,6 +9,113 @@ from models.common import *
 from utils.downloads import attempt_download
 
 
+import torch.nn.functional as F
+from timm.models.layers import trunc_normal_, DropPath
+from timm.models.registry import register_model
+
+
+# ------------------------------------------------
+#   ConvNext
+# ------------------------------------------------
+class LayerNorm(nn.Module):
+    """ LayerNorm that supports two data formats: channels_last (default) or channels_first. 
+    The ordering of the dimensions in the inputs. channels_last corresponds to inputs with 
+    shape (batch_size, height, width, channels) while channels_first corresponds to inputs 
+    with shape (batch_size, channels, height, width).
+    """
+    def __init__(self, normalized_shape, eps=1e-6, data_format="channels_last"):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(normalized_shape))
+        self.bias = nn.Parameter(torch.zeros(normalized_shape))
+        self.eps = eps
+        self.data_format = data_format
+        if self.data_format not in ["channels_last", "channels_first"]:
+            raise NotImplementedError 
+        self.normalized_shape = (normalized_shape, )
+    
+    def forward(self, x):
+        if self.data_format == "channels_last":
+            return F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+        elif self.data_format == "channels_first":
+            u = x.mean(1, keepdim=True)
+            s = (x - u).pow(2).mean(1, keepdim=True)
+            x = (x - u) / torch.sqrt(s + self.eps)
+            x = self.weight[:, None, None] * x + self.bias[:, None, None]
+            return x
+
+
+class PatchDown(nn.Module):
+    # LayerNorm + nn.Conv2d
+    def __init__(self, c1, c2, k=2):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        self.conv = nn.Conv2d(c1, c2, k, k)  #  k = s 
+        self.norm = LayerNorm(c1, eps=1e-6, data_format="channels_first")
+
+    def forward(self, x):
+        return self.conv(self.norm(x))
+
+
+class ConvNextBlock(nn.Module):
+    """ ConvNeXt Block. There are two equivalent implementations:
+    (1) DwConv -> LayerNorm (channels_first) -> 1x1 Conv -> GELU -> 1x1 Conv; all in (N, C, H, W)
+    (2) DwConv -> Permute to (N, H, W, C); LayerNorm (channels_last) -> Linear -> GELU -> Linear; Permute back
+    We use (2) as we find it slightly faster in PyTorch
+    
+    Args:
+        dim (int): Number of input channels.
+        drop_path (float): Stochastic depth rate. Default: 0.0
+        layer_scale_init_value (float): Init value for Layer Scale. Default: 1e-6.
+    """
+    def __init__(self, c1, c2, dp_rate=0.4, e=4):
+        super().__init__()
+        c_ = c1 * e
+        # self.dwconv = nn.Conv2d(c1, c1, kernel_size=7, padding=3, groups=c1) # depthwise conv
+        self.dwconv = nn.Conv2d(c1, c1, kernel_size=3, padding=1, groups=c1) # depthwise conv
+        self.norm = LayerNorm(c1, eps=1e-6)
+        self.pwconv1 = nn.Linear(c1, c_) # pointwise/1x1 convs, implemented with linear layers
+        self.act = nn.GELU()
+        self.pwconv2 = nn.Linear(c_, c2)
+
+        # self.layer_scale_init_value = 1.0
+        # self.gamma = nn.Parameter(layer_scale_init_value * torch.ones((c)), requires_grad=True) if layer_scale_init_value > 0 else None
+
+        # 4: [3, 3, 9, 3] : P2(128) P3(256) P4(512) P5(1024)
+        # dp_rates = [x.item() for x in torch.linspace(0, drop_path, sum(3, 3, 9, 3))]    # TODO   stage ratio = (3, 3, 9, 3)
+        self.drop_path = DropPath(dp_rate) if dp_rate > 0.0 else nn.Identity()
+
+
+    def forward(self, x):
+        input = x
+        x = self.dwconv(x)
+        x = x.permute(0, 2, 3, 1) # (N, C, H, W) -> (N, H, W, C)
+        x = self.norm(x)
+        x = self.pwconv1(x)
+        x = self.act(x)
+        x = self.pwconv2(x)
+        # if self.gamma is not None:
+            # x = self.gamma * x
+        x = x.permute(0, 3, 1, 2) # (N, H, W, C) -> (N, C, H, W)
+        x = input + self.drop_path(x)
+
+        return x
+
+
+class ConvNext(nn.Module):
+    # CSP Bottleneck with 3 convolutions
+    def __init__(self, c1, c2, n=1, dp_rate=0.7, e=4
+                    # shortcut=True, g=1, e=0.5
+                ):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        self.m = nn.Sequential(*(ConvNextBlock(c1, c2, dp_rate, e) for _ in range(n)))
+
+    def forward(self, x):
+        return self.m(x)
+
+
+# ------------------------------------------------
+#   ConvNext
+# ------------------------------------------------
+
 class Focus(nn.Module):
     # Focus wh information into c-space
     # Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                 input                  output
