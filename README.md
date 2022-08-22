@@ -14,8 +14,8 @@
 |**YOLOXY-n**      			|640 |**training...**|**2.82**|**5.5** | 7.0
 |YOLOv5s-SiLU(v6.1) 			|640 |37.4 |**7.23** |**16.53** |**7.7** 
 |YOLOX-s 				|640 |**40.5** |**9.0** |**26.8** | - 
-|**YOLOXY-n-Conv** 			|640 |39.3 |7.6  |17.9|-
-|**[YOLOXY-n-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.67 |19.7	| 9.5
+|**YOLOXY-s-Conv** 			|640 |39.3 |7.6  |17.9|-
+|**[YOLOXY-s-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.67 |19.7	| 9.5
 
 
 ## Installation
