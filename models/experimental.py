@@ -59,9 +59,9 @@ class ILConv(nn.Module):
         # 1x1 Conv + kxk Conv
         c_ = int(c2 * e)  # hidden channels
         self.pwconv_kconv = nn.Sequential(OrderedDict([
-            ('cv1', nn.Conv2d(c1, c_, 1, 1, 0, groups=g, bias=False)),
+            ('cv1', nn.Conv2d(c1, c_, 1, 1, autopad(k, p), groups=g, bias=False)),
             ('bn1', nn.BatchNorm2d(c_)),
-            ('cv2', nn.Conv2d(c_, c2, k, s, autopad(k, p), groups=g, bias=False)),
+            ('cv2', nn.Conv2d(c_, c2, k, s, 0, groups=g, bias=False)),
             ('bn2', nn.BatchNorm2d(c2)),
         ]))
 
