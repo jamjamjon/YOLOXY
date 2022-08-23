@@ -14,6 +14,144 @@ from timm.models.layers import trunc_normal_, DropPath
 from timm.models.registry import register_model
 
 
+
+class ILConv(nn.Module):
+    # Inception Like Conv
+    # 1x1 Conv -------------------| ====> kxk Conv
+    # 1x1 Conv => kxk Conv -------|
+    # 1x1 Conv => Avg ------------|
+    # kxk Conv -------------------|
+    # ----------------------------|
+    # More AysmConv Branch ?
+    # ----------------------------|
+    # 1x3 Conv ??
+    # 3x1 Conv ??
+    # -----------------------------
+
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, e=0.5, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        from collections import OrderedDict
+
+        # TODO
+        assert k % 2 != 0, 'Only for uneven k now!'
+        assert g == 1, 'Not support for group conv!'
+
+        # 1x1 Conv
+        self.pwconv = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv2d(c1, c2, 1, s, 0, groups=g, bias=False)),
+            ('bn', nn.BatchNorm2d(c2))
+        ]))   
+            
+        # kxk Conv
+        self.kconv = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv2d(c1, c2, k, s, autopad(k, p), groups=g, bias=False)),
+            ('bn', nn.BatchNorm2d(c2))
+        ]))  
+
+        # 1x1 Conv + avg
+        self.pwconv_avg = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv2d(c1, c2, 1, 1, autopad(k, p), groups=g, bias=False)),
+            ('bn1', nn.BatchNorm2d(c2)),
+            ('avg', nn.AvgPool2d(k, s, 0)),
+            ('bn2', nn.BatchNorm2d(c2)),
+        ]))
+
+        # 1x1 Conv + kxk Conv
+        c_ = int(c2 * e)  # hidden channels
+        self.pwconv_kconv = nn.Sequential(OrderedDict([
+            ('cv1', nn.Conv2d(c1, c_, 1, 1, 0, groups=g, bias=False)),
+            ('bn1', nn.BatchNorm2d(c_)),
+            ('cv2', nn.Conv2d(c_, c2, k, s, autopad(k, p), groups=g, bias=False)),
+            ('bn2', nn.BatchNorm2d(c2)),
+        ]))
+
+
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+
+
+    def forward(self, x):
+
+        if hasattr(self, 'fusedconv'):
+            y = self.fusedconv(x)
+        else:
+            y = self.pwconv(x) + self.kconv(x) + self.pwconv_avg(x) + self.pwconv_kconv(x)
+        return self.act(y)
+
+    def fuse(self):
+
+        # fused kxk conv2d
+        if not hasattr(self, 'fusedconv'):   
+            self.fusedconv = nn.Conv2d(self.kconv.conv.in_channels, 
+                                        self.kconv.conv.out_channels, 
+                                        self.kconv.conv.kernel_size, 
+                                        self.kconv.conv.stride, 
+                                        self.kconv.conv.padding, 
+                                        self.kconv.conv.groups, 
+                                        bias=True).requires_grad_(False).to(self.kconv.conv.weight.device)
+
+        # weights & bias transfer
+        kernel, bias = self.get_equivalent_kernel_bias()
+        self.fusedconv.weight.data = kernel
+        self.fusedconv.bias.data = bias
+
+        # print(f'self.fusedconv shape: {self.fusedconv}')
+        # print(f'kernel shape: {kernel.shape}')
+        # print(f'bias shape: {bias.shape}')
+
+        for para in self.parameters():
+            para.detach_()
+
+        # del layers
+        for l in ('pwconv', 'kconv', 'pwconv_avg', 'pwconv_kconv'):
+            if hasattr(self, l):
+                self.__delattr__(l)
+        # print(self.__dict__['_modules'])        
+
+
+    def get_equivalent_kernel_bias(self):
+
+        # 1. pwconv fuse bn
+        w_pwconv_bn, b_pwconv_bn = self._fuse_conv_bn(self.pwconv.conv.weight, self.pwconv.bn)  # fused first
+        p_ = autopad(self.kconv.conv.kernel_size[0])
+        w_pwconv_bn = nn.functional.pad(w_pwconv_bn, [p_, p_, p_, p_])   # pad to kxk shape
+
+        # 2. kconv fuse bn
+        w_kconv_bn, b_kconv_bn = self._fuse_conv_bn(self.kconv.conv.weight, self.kconv.bn)
+
+
+        # 3. (pwconv + bn) + (kconv + bn)
+        w_pwconv, b_pwconv = self._fuse_conv_bn(self.pwconv_kconv.cv1.weight, self.pwconv_kconv.bn1)   # fused pwconv
+        w_kconv, b_kconv = self._fuse_conv_bn(self.pwconv_kconv.cv2.weight, self.pwconv_kconv.bn2)     # fused kconv
+        w_pwconv_kconv_bn = F.conv2d(w_kconv, w_pwconv.permute(1, 0, 2, 3))    # pwconv + kconv weights fuse
+        b_pwconv_kconv_bn = (w_kconv * b_pwconv.reshape(1, -1, 1, 1)).sum((1, 2, 3)) + b_kconv   # pwconv + kconv bias fuse
+
+
+        # 4. (pwconv + bn) + (avg + bn)
+        w_pwconv, b_pwconv = self._fuse_conv_bn(self.pwconv_avg.conv.weight, self.pwconv_avg.bn1)   # fused pwconv
+        
+        input_dim = self.pwconv_avg.conv.out_channels // self.pwconv_avg.conv.groups      # transfrom avg_pool to kconv
+        avg_kconv_ = torch.zeros((self.pwconv_avg.conv.out_channels, input_dim, self.pwconv_avg.avg.kernel_size, self.pwconv_avg.avg.kernel_size))  # fused kconv
+        avg_kconv_[np.arange(self.pwconv_avg.conv.out_channels), np.tile(np.arange(input_dim), self.pwconv_avg.conv.groups), :, :] = 1.0 / self.pwconv_avg.avg.kernel_size ** 2
+        
+        w_kconv, b_kconv = self._fuse_conv_bn(avg_kconv_.to(self.pwconv_avg.conv.weight.device), self.pwconv_avg.bn2)     # fused avg_kconv
+        
+        w_pwconv_avg_bn = F.conv2d(w_kconv, w_pwconv.permute(1, 0, 2, 3))    # pwconv + avg_kconv weights fuse
+        b_pwconv_avg_bn = (w_kconv * b_pwconv.reshape(1, -1, 1, 1)).sum((1, 2, 3)) + b_kconv   # pwconv + avg_kconv bias fuse
+
+        return w_pwconv_bn + w_kconv_bn + w_pwconv_kconv_bn + w_pwconv_avg_bn, b_pwconv_bn + b_kconv_bn + b_pwconv_kconv_bn + b_pwconv_avg_bn
+
+
+    def _fuse_conv_bn(self, conv_weight=None, bn=None):
+        if conv_weight is None or bn is None:
+            return 0, 0
+
+        std = (bn.running_var + bn.eps).sqrt()
+        return conv_weight * (bn.weight / std).reshape((-1, 1, 1, 1)), bn.bias - bn.running_mean * bn.weight / std 
+
+
+
+
+
 # ------------------------------------------------
 #   ConvNext
 # ------------------------------------------------
