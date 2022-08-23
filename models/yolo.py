@@ -402,6 +402,45 @@ if __name__ == '__main__':
     # playground
     if opt.check:
         x = torch.rand(1, 3, 640, 640).to(device)
+        
+        
+
+#         # Inception Like Conv
+#         # ilc = ILConv(3, 16, 3, 2).to(device)
+#         # ilc.fuse()
+#         # _ = profile(input=x, ops=[ilc], n=5, device=device)
+
+#         # verify
+
+#         for k in (3, ):
+#             for s in (1, 2):
+#                 # model = ILConv(3, 32, k, s).to(device)
+#                 # model = RepConv(3, 16, k, s).to(device)
+#                 model = Conv(3, 16, 3, 2).to(device)
+
+
+#                 for module in model.modules():
+#                     if isinstance(module, torch.nn.BatchNorm2d):
+#                         nn.init.uniform_(module.running_mean, 0, 0.1)
+#                         nn.init.uniform_(module.running_var, 0, 0.1)
+#                         nn.init.uniform_(module.weight, 0, 0.1)
+#                         nn.init.uniform_(module.bias, 0, 0.1)
+                
+#                 model.eval()
+
+#                 train_y = model(x)
+
+#                 # model.fuse()
+#                 # model.fuse_repconv()
+#                 model.conv = fuse_conv_and_bn(model.conv, model.bn)  # update conv
+#                 delattr(model, 'bn')  # remove batchnorm
+#                 model.forward = model.forward_fuse  # update forward
+#                 deploy_y = model(x)
+
+#                 print('========================== The diff is')
+#                 print(((train_y - deploy_y) ** 2).sum())
+
+
 
         # p = PatchifyStem(3, 64, 3, 3)
         # print(p)
