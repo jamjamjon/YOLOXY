@@ -15,25 +15,27 @@ from timm.models.registry import register_model
 
 
 
-class ILConv(nn.Module):
-    # Inception Like Conv
+class RepConvs(nn.Module):
+    # ----------------------------|
+    #   Inception Like Conv
+    # ----------------------------|
     # 1x1 Conv -------------------| ====> kxk Conv
-    # 1x1 Conv => kxk Conv -------|
-    # 1x1 Conv => Avg ------------|
+    # 1x1 Conv + kxk Conv --------|
+    # 1x1 Conv + Avg -------------|
     # kxk Conv -------------------|
+    # 1xk Conv -------------------|
+    # kx1 Conv -------------------|
     # ----------------------------|
-    # More AysmConv Branch ?
+    # TODO:
+    # kxk Conv + 1x1 Conv 
+    # kxk Conv + kxk Conv 
     # ----------------------------|
-    # 1x3 Conv ??
-    # 3x1 Conv ??
-    # -----------------------------
 
     def __init__(self, c1, c2, k=3, s=1, p=None, g=1, e=0.5, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super().__init__()
         from collections import OrderedDict
 
-        # TODO
-        assert k % 2 != 0, 'Only for uneven k now!'
+        assert k % 2 != 0, 'Not support for uneven-k!'
         assert g == 1, 'Not support for group conv!'
 
         # 1x1 Conv
@@ -44,13 +46,13 @@ class ILConv(nn.Module):
             
         # kxk Conv
         self.kconv = nn.Sequential(OrderedDict([
-            ('conv', nn.Conv2d(c1, c2, k, s, autopad(k, p), groups=g, bias=False)),
+            ('conv', nn.Conv2d(c1, c2, k, s, self._autopad(k, p), groups=g, bias=False)),
             ('bn', nn.BatchNorm2d(c2))
         ]))  
 
         # 1x1 Conv + avg
         self.pwconv_avg = nn.Sequential(OrderedDict([
-            ('conv', nn.Conv2d(c1, c2, 1, 1, autopad(k, p), groups=g, bias=False)),
+            ('conv', nn.Conv2d(c1, c2, 1, 1, self._autopad(k, p), groups=g, bias=False)),
             ('bn1', nn.BatchNorm2d(c2)),
             ('avg', nn.AvgPool2d(k, s, 0)),
             ('bn2', nn.BatchNorm2d(c2)),
@@ -59,22 +61,40 @@ class ILConv(nn.Module):
         # 1x1 Conv + kxk Conv
         c_ = int(c2 * e)  # hidden channels
         self.pwconv_kconv = nn.Sequential(OrderedDict([
-            ('cv1', nn.Conv2d(c1, c_, 1, 1, autopad(k, p), groups=g, bias=False)),
+            ('pwconv', nn.Conv2d(c1, c_, 1, 1, self._autopad(k, p), groups=g, bias=False)),
             ('bn1', nn.BatchNorm2d(c_)),
-            ('cv2', nn.Conv2d(c_, c2, k, s, 0, groups=g, bias=False)),
+            ('kconv', nn.Conv2d(c_, c2, k, s, 0, groups=g, bias=False)),
             ('bn2', nn.BatchNorm2d(c2)),
         ]))
 
+        # AsymConv: 1xk
+        self.aysmconv_1xk = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv2d(c1, c2, (1, k), s, self._autopad((1, k), p), groups=g, bias=False)),
+            ('bn', nn.BatchNorm2d(c2))
 
+        ])) 
+
+        # AsymConv: kx1
+        self.aysmconv_kx1 = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv2d(c1, c2, (k, 1), s, self._autopad((k, 1), p), groups=g, bias=False)),
+            ('bn', nn.BatchNorm2d(c2))
+
+        ])) 
+
+        # act
         self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
 
 
     def forward(self, x):
-
         if hasattr(self, 'fusedconv'):
             y = self.fusedconv(x)
         else:
-            y = self.pwconv(x) + self.kconv(x) + self.pwconv_avg(x) + self.pwconv_kconv(x)
+            y = self.pwconv(x) 
+            y += self.kconv(x) 
+            y += self.pwconv_avg(x) 
+            y += self.pwconv_kconv(x) 
+            y += self.aysmconv_1xk(x) 
+            y += self.aysmconv_kx1(x)
         return self.act(y)
 
     def fuse(self):
@@ -90,63 +110,144 @@ class ILConv(nn.Module):
                                         bias=True).requires_grad_(False).to(self.kconv.conv.weight.device)
 
         # weights & bias transfer
-        kernel, bias = self.get_equivalent_kernel_bias()
-        self.fusedconv.weight.data = kernel
+        weight, bias = self.get_equivalent_weight_bias()
+        self.fusedconv.weight.data = weight
         self.fusedconv.bias.data = bias
-
-        # print(f'self.fusedconv shape: {self.fusedconv}')
-        # print(f'kernel shape: {kernel.shape}')
-        # print(f'bias shape: {bias.shape}')
-
         for para in self.parameters():
             para.detach_()
 
-        # del layers
-        for l in ('pwconv', 'kconv', 'pwconv_avg', 'pwconv_kconv'):
+        # del conv modules
+        convs = [x for x in self._modules.keys() if 'conv' in x and x != 'fusedconv']  # keep activation and fusedconv
+        for l in convs:
             if hasattr(self, l):
                 self.__delattr__(l)
-        # print(self.__dict__['_modules'])        
+        # print(self._modules.keys())
 
 
-    def get_equivalent_kernel_bias(self):
+    def get_equivalent_weight_bias(self):
 
         # 1. pwconv fuse bn
         w_pwconv_bn, b_pwconv_bn = self._fuse_conv_bn(self.pwconv.conv.weight, self.pwconv.bn)  # fused first
-        p_ = autopad(self.kconv.conv.kernel_size[0])
-        w_pwconv_bn = nn.functional.pad(w_pwconv_bn, [p_, p_, p_, p_])   # pad to kxk shape
+        w_pwconv_bn = self._pwconv_to_kconv_padding(w_pwconv_bn, self.kconv.conv.kernel_size)  # pad to kxk shape
 
         # 2. kconv fuse bn
         w_kconv_bn, b_kconv_bn = self._fuse_conv_bn(self.kconv.conv.weight, self.kconv.bn)
 
-
         # 3. (pwconv + bn) + (kconv + bn)
-        w_pwconv, b_pwconv = self._fuse_conv_bn(self.pwconv_kconv.cv1.weight, self.pwconv_kconv.bn1)   # fused pwconv
-        w_kconv, b_kconv = self._fuse_conv_bn(self.pwconv_kconv.cv2.weight, self.pwconv_kconv.bn2)     # fused kconv
-        w_pwconv_kconv_bn = F.conv2d(w_kconv, w_pwconv.permute(1, 0, 2, 3))    # pwconv + kconv weights fuse
-        b_pwconv_kconv_bn = (w_kconv * b_pwconv.reshape(1, -1, 1, 1)).sum((1, 2, 3)) + b_kconv   # pwconv + kconv bias fuse
+        w_pwconv_, b_pwconv_ = self._fuse_conv_bn(self.pwconv_kconv.pwconv.weight, self.pwconv_kconv.bn1)   # fused pwconv
+        w_kconv_, b_kconv_ = self._fuse_conv_bn(self.pwconv_kconv.kconv.weight, self.pwconv_kconv.bn2)     # fused kconv
+        w_pwconv_kconv_bn, b_pwconv_kconv_bn = self._fuse_seq_pwconv_kconv(w_pwconv_, b_pwconv_, w_kconv_, b_kconv_)
 
 
         # 4. (pwconv + bn) + (avg + bn)
         w_pwconv, b_pwconv = self._fuse_conv_bn(self.pwconv_avg.conv.weight, self.pwconv_avg.bn1)   # fused pwconv
-        
-        input_dim = self.pwconv_avg.conv.out_channels // self.pwconv_avg.conv.groups      # transfrom avg_pool to kconv
-        avg_kconv_ = torch.zeros((self.pwconv_avg.conv.out_channels, input_dim, self.pwconv_avg.avg.kernel_size, self.pwconv_avg.avg.kernel_size))  # fused kconv
-        avg_kconv_[np.arange(self.pwconv_avg.conv.out_channels), np.tile(np.arange(input_dim), self.pwconv_avg.conv.groups), :, :] = 1.0 / self.pwconv_avg.avg.kernel_size ** 2
-        
+        avg_kconv_ = self._avg_to_kconv(self.pwconv_avg.conv, self.pwconv_avg.avg)   # avg -> kconv
         w_kconv, b_kconv = self._fuse_conv_bn(avg_kconv_.to(self.pwconv_avg.conv.weight.device), self.pwconv_avg.bn2)     # fused avg_kconv
-        
-        w_pwconv_avg_bn = F.conv2d(w_kconv, w_pwconv.permute(1, 0, 2, 3))    # pwconv + avg_kconv weights fuse
-        b_pwconv_avg_bn = (w_kconv * b_pwconv.reshape(1, -1, 1, 1)).sum((1, 2, 3)) + b_kconv   # pwconv + avg_kconv bias fuse
+        w_pwconv_avg_bn, b_pwconv_avg_bn = self._fuse_seq_pwconv_kconv(w_pwconv, b_pwconv, w_kconv, b_kconv)
 
-        return w_pwconv_bn + w_kconv_bn + w_pwconv_kconv_bn + w_pwconv_avg_bn, b_pwconv_bn + b_kconv_bn + b_pwconv_kconv_bn + b_pwconv_avg_bn
+        # 5. asym-conv
+        w_asymconv_1xk_bn, b_asymconv_1xk_bn = self._fuse_conv_bn(self.aysmconv_1xk.conv.weight, self.aysmconv_1xk.bn)   # fused 1xk asym-conv
+        w_asymconv_1xk_bn = self._pwconv_to_kconv_padding(w_asymconv_1xk_bn)
+        
+        w_asymconv_kx1_bn, b_asymconv_kx1_bn = self._fuse_conv_bn(self.aysmconv_kx1.conv.weight, self.aysmconv_kx1.bn)   # fused kx1 asym-conv
+        w_asymconv_kx1_bn = self._pwconv_to_kconv_padding(w_asymconv_kx1_bn)
+
+        # # 6. (kconv + bn) + (pwconv + bn)
+        # w_kconv__, b_kconv__ = self._fuse_conv_bn(self.kconv_pwconv.kconv.weight, self.kconv_pwconv.bn1)     # fused kconv
+        # w_pwconv__, b_pwconv__ = self._fuse_conv_bn(self.kconv_pwconv.pwconv.weight, self.kconv_pwconv.bn2)   # fused pwconv
+        # w_kconv_pwconv_bn, b_kconv_pwconv_bn = self._fuse_seq_pwconv_kconv(w_kconv__, b_kconv__, w_pwconv__, b_pwconv__)
+
+
+        # fuse all branch kconv -> add directly
+        return (sum((w_pwconv_bn, w_kconv_bn, w_pwconv_kconv_bn, w_pwconv_avg_bn, w_asymconv_1xk_bn, w_asymconv_kx1_bn)), 
+                sum((b_pwconv_bn, b_kconv_bn, b_pwconv_kconv_bn, b_pwconv_avg_bn, b_asymconv_1xk_bn, b_asymconv_kx1_bn)))
+
+
+    def _autopad(self, k, p=None):  # kernel, padding
+        # Pad to 'same'
+        if p is None:
+            p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
+        return p
 
 
     def _fuse_conv_bn(self, conv_weight=None, bn=None):
+        # fuse conv and bn
         if conv_weight is None or bn is None:
             return 0, 0
-
         std = (bn.running_var + bn.eps).sqrt()
         return conv_weight * (bn.weight / std).reshape((-1, 1, 1, 1)), bn.bias - bn.running_mean * bn.weight / std 
+
+
+    def _pwconv_to_kconv_padding(self, w_pwconv, k=None):
+        # pad pwconv or asym-conv to kconv 
+        if w_pwconv is None:
+            return 0
+        else:
+            if k is None:
+                k = w_pwconv.size()[-2:]    # get kernel_size(h, w)
+            p_ = self._autopad(k)
+            pad_ = [p_] * 4 if isinstance(p_, int) else [p_[0], p_[0], p_[1], p_[1]]
+            return nn.functional.pad(w_pwconv, pad_)   # pad to kxk shape
+
+
+    def _fuse_seq_pwconv_kconv(self, w_pwconv, b_pwconv, w_kconv, b_kconv):
+        # fuse pwconv + kconv
+        # x -> pwconv -> y1 -> kconv -> y2
+        # pwconv: y1 = w1 * x + b1  |  kconv: y2 = w2 * y1 + b2 
+        # y2 = (w2*w1)*x + (w2*b1+b2) 
+        w_pwconv_kconv = F.conv2d(w_kconv, w_pwconv.permute(1, 0, 2, 3))    # weights fuse
+        b_pwconv_kconv = (w_kconv * b_pwconv.reshape(1, -1, 1, 1)).sum((1, 2, 3)) + b_kconv   # bias fuse
+        return w_pwconv_kconv, b_pwconv_kconv
+
+
+    # TODO:
+    # def _fuse_seq_kconv_pwconv(self, w_pwconv, b_pwconv, w_kconv, b_kconv):
+    # def _fuse_seq_kconv_kconv(self, w_pwconv, b_pwconv, w_kconv, b_kconv):
+
+
+
+    def _avg_to_kconv(self, kconv, avg):
+        # turn avg to kconv, k=avg.kernel_size
+        input_dim = kconv.out_channels // kconv.groups      # transfrom avg_pool to kconv
+        avg_kconv = torch.zeros((kconv.out_channels, input_dim, avg.kernel_size, avg.kernel_size))  # fused kconv
+        avg_kconv[np.arange(kconv.out_channels), np.tile(np.arange(input_dim), kconv.groups), :, :] = 1.0 / avg.kernel_size ** 2
+        return avg_kconv     
+
+
+    def _kconv_concat(w_list, b_list):
+        # concat(kconv, kconv)
+        return torch.cat(w_list, dim=0), torch.cat(b_list)
+
+
+    def verify(self, x, verbose=True):
+        '''
+        Uasge:
+            x = torch.rand(1, 3, 640, 640).to(device)
+            repconvs = RepConvs(3, 64, 3, 2).to(device)
+            # repconvs.fuse()
+            repconvs.verify(x, verbose=True)
+        '''
+
+        for module in self.modules():
+            if isinstance(module, torch.nn.BatchNorm2d):
+                nn.init.uniform_(module.running_mean, 0, 0.1)
+                nn.init.uniform_(module.running_var, 0, 0.1)
+                nn.init.uniform_(module.weight, 0, 0.1)
+                nn.init.uniform_(module.bias, 0, 0.1)
+        self.eval()
+
+        if verbose:
+            print(f"\n{'-' * 20}\n un-fused \n{'-'*20}\n")
+            print(self)
+        y = self.forward(x)
+
+        self.fuse()
+        if verbose:
+            print(f"\n{'-' * 20}\n fused \n{'-'*20}\n")
+            print(self)
+        y_fused = self.forward(x)
+
+        print(f'>> Difference betweeen y and y_fused: {((y_fused - y) ** 2).sum()}')
 
 
 
