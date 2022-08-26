@@ -9,6 +9,190 @@ import torch.nn as nn
 from models.common import *
 
 
+
+class RepBottleneck(nn.Module):
+    # -----------------------------|
+    #   Bottleneck
+    # -----------------------------|
+    # identity(bn), c -----------------| ====> 3x3, c Conv
+    # 1x1 Conv, c/2 + 3x3 Conv c, -|
+    # -----------------------------|
+
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, e=0.5, act=True, has_identity=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        from collections import OrderedDict
+
+        assert k % 2 != 0, 'Not support for uneven-k!'
+        assert g == 1, 'Not support for group conv!'
+  
+        
+        # 1x1 Conv + kxk Conv
+        c_ = int(c2 * e)  # hidden channels
+        self.pwconv_kconv = nn.Sequential(OrderedDict([
+            ('pwconv', nn.Conv2d(c1, c_, 1, 1, self._autopad(k, p), groups=g, bias=False)),
+            ('bn1', nn.BatchNorm2d(c_)),
+            ('kconv', nn.Conv2d(c_, c2, k, s, 0, groups=g, bias=False)),
+            ('bn2', nn.BatchNorm2d(c2)),
+        ]))
+
+        # identity
+        self.add = has_identity
+        if self.add:
+            self.bn = nn.BatchNorm2d(c1)
+
+        # act
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+
+        # attrs
+        self.c1, self.c2,  self.g, self.k, self.s, self.p = c1, c2, g, k, s, p
+
+    def forward(self, x):
+        if hasattr(self, 'fusedconv'):
+            y = self.fusedconv(x)
+        else:
+            y = self.pwconv_kconv(x)
+            y = y + self.bn(x) if self.add else y
+
+        return self.act(y)
+
+    def fuse(self):
+
+        # fused kxk conv2d
+        if not hasattr(self, 'fusedconv'):   
+            self.fusedconv = nn.Conv2d(self.c1, 
+                                        self.c2, 
+                                        self.k, 
+                                        self.s, 
+                                        self._autopad(self.k, self.p), 
+                                        self.g, 
+                                        bias=True).requires_grad_(False).to(self.pwconv_kconv.pwconv.weight.device)
+
+        # weights & bias transfer
+        weight, bias = self.get_equivalent_weight_bias()
+        self.fusedconv.weight.data = weight
+        self.fusedconv.bias.data = bias
+        for para in self.parameters():
+            para.detach_()
+
+        # del conv modules
+        convs = [x for x in self._modules.keys() if 'conv' in x and x != 'fusedconv' or 'bn' in x]  # keep activation and fusedconv
+        for l in convs:
+            if hasattr(self, l):
+                self.__delattr__(l)
+        # print(self._modules.keys())
+
+
+    def get_equivalent_weight_bias(self):
+
+        # (pwconv + bn) + (kconv + bn)
+        w_pwconv_, b_pwconv_ = self._fuse_conv_bn(self.pwconv_kconv.pwconv.weight, self.pwconv_kconv.bn1)   # fused pwconv
+        w_kconv_, b_kconv_ = self._fuse_conv_bn(self.pwconv_kconv.kconv.weight, self.pwconv_kconv.bn2)     # fused kconv
+        w_pwconv_kconv_bn, b_pwconv_kconv_bn = self._fuse_seq_pwconv_kconv(w_pwconv_, b_pwconv_, w_kconv_, b_kconv_)
+
+        # identity
+        if self.add:
+
+            # identity to kconv
+            w_identity_bn, b_identity_bn = self._identity_to_kconv_bn(k=3, bn=self.bn, device=self.pwconv_kconv.pwconv.weight.device)
+
+            # fuse all branch kconv -> add directly
+            return w_pwconv_kconv_bn + w_identity_bn, b_pwconv_kconv_bn + b_identity_bn
+
+        # fuse all branch kconv -> add directly
+        return w_pwconv_kconv_bn, b_pwconv_kconv_bn
+
+
+    def _autopad(self, k, p=None):  # kernel, padding
+        # Pad to 'same'
+        if p is None:
+            p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
+        return p
+
+
+    def _fuse_conv_bn(self, conv_weight=None, bn=None):
+        # fuse conv and bn
+        if conv_weight is None or bn is None:
+            return 0, 0
+        std = (bn.running_var + bn.eps).sqrt()
+        return conv_weight * (bn.weight / std).reshape((-1, 1, 1, 1)), bn.bias - bn.running_mean * bn.weight / std 
+
+
+    def _pwconv_to_kconv_padding(self, w_pwconv, k=None):
+        # pad pwconv or asym-conv to kconv 
+        if w_pwconv is None:
+            return 0
+        else:
+            if k is None:
+                k = w_pwconv.size()[-2:]    # get kernel_size(h, w)
+            p_ = self._autopad(k)
+            pad_ = [p_] * 4 if isinstance(p_, int) else [p_[0], p_[0], p_[1], p_[1]]
+            return nn.functional.pad(w_pwconv, pad_)   # pad to kxk shape
+
+
+    def _fuse_seq_pwconv_kconv(self, w_pwconv, b_pwconv, w_kconv, b_kconv):
+        # fuse pwconv + kconv
+        # x -> pwconv -> y1 -> kconv -> y2
+        # pwconv: y1 = w1 * x + b1  |  kconv: y2 = w2 * y1 + b2 
+        # y2 = (w2*w1)*x + (w2*b1+b2) 
+        w_pwconv_kconv = F.conv2d(w_kconv, w_pwconv.permute(1, 0, 2, 3))    # weights fuse
+        b_pwconv_kconv = (w_kconv * b_pwconv.reshape(1, -1, 1, 1)).sum((1, 2, 3)) + b_kconv   # bias fuse
+        return w_pwconv_kconv, b_pwconv_kconv
+
+
+    def _identity_to_kconv_bn(self, k, bn, device):
+        # turn identity branch to kconv+bn
+
+        # identity to kconv
+        input_dim = self.c1 // self.g
+        kernel = np.zeros((self.c1, input_dim, k, k), dtype=np.float32)    # empty kernel
+
+        for i in range(self.c1):
+            kernel[i, i % input_dim, 1, 1] = 1
+        w_identity = torch.from_numpy(kernel).to(device)
+
+        # fuse identity & bn
+        w_identity_bn, b_identity_bn = self._fuse_conv_bn(conv_weight=w_identity, bn=bn)
+
+        return w_identity_bn, b_identity_bn
+
+
+    def _kconv_concat(w_list, b_list):
+        # concat(kconv, kconv)
+        return torch.cat(w_list, dim=0), torch.cat(b_list)
+
+
+    def verify(self, x, verbose=True):
+        '''
+        Uasge:
+            x = torch.rand(1, 3, 640, 640).to(device)
+            repconvs = RepConvs(3, 64, 3, 2).to(device)
+            # repconvs.fuse()
+            repconvs.verify(x, verbose=True)
+        '''
+
+        for module in self.modules():
+            if isinstance(module, torch.nn.BatchNorm2d):
+                nn.init.uniform_(module.running_mean, 0, 0.1)
+                nn.init.uniform_(module.running_var, 0, 0.1)
+                nn.init.uniform_(module.weight, 0, 0.1)
+                nn.init.uniform_(module.bias, 0, 0.1)
+        self.eval()
+
+        if verbose:
+            print(f"\n{'-' * 20}\n un-fused \n{'-'*20}\n")
+            print(self)
+        y = self.forward(x)
+
+        self.fuse()
+        if verbose:
+            print(f"\n{'-' * 20}\n fused \n{'-'*20}\n")
+            print(self)
+        y_fused = self.forward(x)
+
+        print(f'>> Difference betweeen y and y_fused: {((y_fused - y) ** 2).sum()}')
+
+
+
 class RepConvs(nn.Module):
     # ----------------------------|
     #   Inception Like Conv
