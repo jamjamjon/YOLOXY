@@ -133,13 +133,13 @@ python export.py  --weights s.pt --img 640 --simplify  --include rknn --cali dat
 - [x] Tasked alignment assignment in compute_loss()	
 - [x] add KPTs cost to cost matrix in order to align all task
 - [x] different branch has different branch head(TOOD, TAL)
-
+- [x] DBB, DBBConv() => Diverse Branch Block: Building a Convolution as an Inception-like Unit
+- [x] vari-focal loss in cls and obj; 
 - [ ] nano model: baseline, compare with yolov5;
 
 - [ ] torchscript, tensorRT, coreML support   
 - [ ] more backbones experiments(PP-YOLOE, Transformer-based, ConvNext, ...)    
-- [ ] DBB, DBBConv() => Diverse Branch Block: Building a Convolution as an Inception-like Unit
-- [ ] X_focal loss => vari-focal loss in cls and obj; d-focal loss in box 
+- [ ] d-focal loss in box 
 - [ ] End2End => NMS Free
 - [ ] OC_tracker with kpt
 - [ ] ObjectBox
