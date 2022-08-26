@@ -6,6 +6,7 @@ import math
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from models.common import *
 
 
@@ -204,7 +205,6 @@ class RepConvs(nn.Module):
     # 1xk Conv -------------------|
     # kx1 Conv -------------------|
     # ----------------------------|
-    # TODO:
     # kxk Conv + 1x1 Conv 
     # kxk Conv + kxk Conv 
     # ----------------------------|

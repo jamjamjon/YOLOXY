@@ -149,7 +149,7 @@ class HydraXHead(nn.Module):
         return torch.cat(xs, 2).view(bs, -1, ny, nx)
 # ------------- New Head ---------------------------------------
 
-# TODO: deprecate, to remove
+# Deprecated, to remove
 class Decouple(nn.Module):
     # Decoupled head
     def __init__(self, c1, nc=80, na=1):  # ch_in, num_classes, num_anchors
@@ -161,7 +161,6 @@ class Decouple(nn.Module):
         # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
 
         self.a = Conv(c1, c_, 1)        # stem
-         
         self.bc = Conv(c_, c_, 3)     # fused b,c brach 
         # self.bc = CrossConv(c_, c_, 3, 1)
 
@@ -202,7 +201,7 @@ class Detect(nn.Module):
         self.grid = [torch.zeros(1)] * self.nl    # girds for every scales
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
         self.m = nn.ModuleList(HydraHead(x, self.nc, self.na, self.nk) for x in ch)  # hydra head
-        # self.m = nn.ModuleList(HydraXHead(x, self.nc, self.na, self.nk) for x in ch)  # new hydra X head
+        # self.m = nn.ModuleList(HydraXHead(x, self.nc, self.na, self.nk) for x in ch)  # new hydra x head
 
 
     def forward(self, x):

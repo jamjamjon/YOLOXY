@@ -241,10 +241,7 @@ class ComputeLoss:
     # build targets
     def build_targets(self, p, targets):
         # p: {(bs, 1, 80, 80, 85), ...}
-
         input_h, input_w = self.stride[0] * p[0].shape[2], self.stride[0] * p[0].shape[3] # 640, 640
-
-        # t_build_p_0 = time.time()
 
         # build predictions
         (   p,                          # [bs, 1, 80, 80, no] => [bs, 8400, no]
@@ -257,17 +254,9 @@ class ComputeLoss:
             self.expanded_strides,      # [1, n_anchors_all(8400), 1] 
         ) = self.build_preds(p)
 
-        # t_build_p_1 = time.time()
-        # print(f'====> t_build_pred: {t_build_p_1 - t_build_p_0}')
-
 
         # build targets
         targets_list = np.zeros((p.shape[0], 1, 5 + self.nk * 2)).tolist()   # batch size
-
-
-        # t_build_t_0 = time.time()
-
-
         for i, item in enumerate(targets.cpu().numpy().tolist()):
             targets_list[int(item[0])].append(item[1:])
         max_len = max((len(l) for l in targets_list))
@@ -279,10 +268,6 @@ class ComputeLoss:
 
         targets = torch.from_numpy(np.array(list(map(lambda l:l + empty_list * (max_len - len(l)), targets_list)))[:,1:,:]).to(self.device)
         nts = (targets.sum(dim=2) > 0).sum(dim=1)  # number of objects list per batch [13, 4, 2, ...]
-        
-        # t_build_t_1 = time.time()
-        # print(f'====> t_build_target: {t_build_t_1 - t_build_t_0}')
-
 
         # targets cls, box, ...
         tcls, tbox, tbox_l1, tobj, finalists_masks, num_finalists = [], [], [], [], [], 0 
@@ -311,20 +296,15 @@ class ComputeLoss:
                 p_bboxes = pbox[idx]        # pred bbox
                 p_classes = pcls[idx]       # pred cls
                 p_objs = pobj[idx]          # pred obj
-
-
-                # keypoint: de-scale to origin image size  !!!!
+ 
                 if self.nk > 0:
                     p_kpts = pkpt[idx]          # pred kpts
 
-                    imgsz_kpt = torch.Tensor([[input_w, input_h] * self.nk]).type_as(targets)  # [[640, 640, 640, 640]]
+                    imgsz_kpt = torch.Tensor([[input_w, input_h] * self.nk]).type_as(targets)  # de-scale to origin image size [[640, 640, 640, 640]]
                     t_kpts = targets[idx, :nt, -2 * self.nk:].mul_(imgsz_kpt)  # t_kpts
                 else:
                     t_kpts = None
                     p_kpts = None          # pred kpts
-                        
-
-                # t_get_assignments_0 = time.time()
 
                 # do label assignment: SimOTA 
                 (
@@ -336,8 +316,6 @@ class ComputeLoss:
                     tbox_l1_,
                     tkpt_
                  ) = self.get_assignments(p_bboxes, p_classes, p_objs, t_bboxes, t_classes, t_kpts, p_kpts)
-                # t_get_assignments_1 = time.time()
-                # print(f'====> t_get_assignments: {t_get_assignments_1 - t_get_assignments_0}')
                 
                 # num of assigned anchors in one batch
                 num_finalists += num_anchor_assigned    
@@ -365,10 +343,7 @@ class ComputeLoss:
         if self.nk > 0:
             tkpt = torch.cat(tkpt, 0)
 
-
-        return ( pbox, pbox0, pobj, pcls, pkpt,
-                 tcls, tbox, tbox_l1, tobj, tkpt,
-                 finalists_masks, num_finalists )
+        return pbox, pbox0, pobj, pcls, pkpt, tcls, tbox, tbox_l1, tobj, tkpt, finalists_masks, num_finalists 
 
 
     # SimOTA
@@ -376,15 +351,7 @@ class ComputeLoss:
     def get_assignments(self, p_bboxes, p_classes, p_objs, t_bboxes, t_classes, t_kpts=None, p_kpts=None):
 
         num_objects = t_bboxes.shape[0]   # number of gt object per image
-
-
-        # t_get_candidates_0 = time.time()
-        # 1. get candidates: {a fixed center region} + {gt box} 
         candidates_mask, is_in_boxes_and_center = self.get_candidates(t_bboxes)
-        # t_get_candidates_1 = time.time()
-        # print(f'====> t_get_candidates: {t_get_candidates_1 - t_get_candidates_0}')
-
-
 
         # 2. pick preds in fixed center region, and get bbox, cls, obj
         p_bboxes = p_bboxes[candidates_mask]
@@ -396,20 +363,15 @@ class ComputeLoss:
             p_kpts = p_kpts[candidates_mask]   # [num, 3*nk]
 
 
-        # t_pair_wise_ious_0 = time.time()
-
         # 3. iou loss => iou(gts, preds), for calculate dynamic_k
         pair_wise_ious = pairwise_bbox_iou(t_bboxes, p_bboxes, box_format='xywh')
         pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
-        # t_pair_wise_ious_1 = time.time()
-        # print(f'====> t_pair_wise_ious_1: {t_pair_wise_ious_1 - t_pair_wise_ious_0}')
 
         # 4. cls loss = cls * obj
         gt_cls_per_image = (F.one_hot(t_classes.to(torch.int64), self.nc)
                             .float()
                             .unsqueeze(1)
                             .repeat(1, num_in_boxes_anchor, 1))   # gt classes to one hot
-
 
         with torch.cuda.amp.autocast(enabled=False):
             cls_preds_ = (cls_preds_.float().sigmoid_().unsqueeze(0).repeat(num_objects, 1, 1) 
@@ -418,23 +380,19 @@ class ComputeLoss:
             pair_wise_cls_loss = F.binary_cross_entropy(cls_preds_.sqrt_(), gt_cls_per_image, reduction="none").sum(-1)
         del cls_preds_, obj_preds_
 
-
-        # # kpt loss matrix (OKS)
+        # kpt loss matrix (OKS)
         # if t_kpts is not None and p_kpts is not None:
         #     pair_wise_kpts = pairwise_kpts_oks(self.kpts_sigmas, p_kpts, t_kpts, t_bboxes, alpha=1.0, beta=2.0)
         #     pairwise_kpts_oks_loss = -torch.log(pair_wise_kpts + 1e-8)
         #     pairwise_kpts_oks_loss = pairwise_kpts_oks_loss.to(self.device)
 
-
         # 5. cost ==> cls * 1.0 + iou * 3.0 + neg * 1e+5
         cost = (1.0 * pair_wise_cls_loss + 3.0 * pair_wise_ious_loss + 10000.0 * (~is_in_boxes_and_center))  
         del pair_wise_ious_loss, pair_wise_cls_loss
+
         # if t_kpts is not None and p_kpts is not None:
         #     cost += pairwise_kpts_oks_loss * 5.0        
         #     del pairwise_kpts_oks_loss
-
-
-        # t_dynamic_k_matching_0 = time.time()
 
         # 6. assign different k positive samples for every gt.
         (   
@@ -443,9 +401,7 @@ class ComputeLoss:
             matched_gt_inds,
             finalists_mask     
         ) = self.dynamic_k_matching(cost, pair_wise_ious, t_classes, candidates_mask)
-        del cost, pair_wise_ious, 
-        # t_dynamic_k_matching_1 = time.time()
-        # print(f'====> t_dynamic_k_matching_1: {t_dynamic_k_matching_1 - t_dynamic_k_matching_0}')
+        del cost, pair_wise_ious
 
         # 7. empty cuda cache
         torch.cuda.empty_cache() 
@@ -495,7 +451,7 @@ class ComputeLoss:
 
         # in fixed region
         # TODO: x percentage of width or height, rather than fixed value: 2.5 
-        center_radius = 2.5   # strides=[8, 16, 32] ; 2.5 * strides=[20, 40, 80] = grid_size! that's why 2.5 is more better
+        center_radius = 2.5   # strides=[8, 16, 32] ; 2.5 * strides=[20, 40, 80] = grid_size! that's why 2.5 is better
         t_bboxes_tl = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) - center_radius * grids_stride.unsqueeze(0)
         t_bboxes_br = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) + center_radius * grids_stride.unsqueeze(0)
 
@@ -516,9 +472,7 @@ class ComputeLoss:
     # assign different k positive samples for every gt 
     def dynamic_k_matching(self, cost, pair_wise_ious, t_classes, candidates_mask):
 
-
         torch.cuda.empty_cache()    # empty cuda cache at start
-        
         ious_in_boxes_matrix = pair_wise_ious   # iou matrix 
 
         # get top-k(10) iou anchor point
@@ -545,68 +499,28 @@ class ComputeLoss:
             matching_matrix[:, anchor_matching_gt > 1] *= 0
             matching_matrix[cost_argmin, anchor_matching_gt > 1] = 1
 
-        #--------------------------------------------------------------------------
-        # Fix simota bug(many2one): assign 1 anchor for gts those have no assigned anchor caused by solving conflict  
-        #--------------------------------------------------------------------------
+        #----------------------------------------------------------------------------------------------------------------
+        # simota enhancement(many2one): assign 1 anchor for gts those have no assigned anchor caused by solving conflict  
+        #----------------------------------------------------------------------------------------------------------------
         if (matching_matrix.sum(1) == 0).sum() > 0:    # some gt(row) has no assigned anchors
             cost_non_assigned = cost[matching_matrix.sum(1) == 0, :]
             cols_assigned = matching_matrix.sum(0) > 0
-            
-            # print(f'cols_assigned: {cols_assigned}')
-            # idx_assigned = []
-            # for i, x in enumerate(cols_assigned):
-            #     if x.item() is True:
-            #         idx_assigned.append(i)    
-                    # print(f'col has assigned =====> {i}')
-            # print(f'============> idx col assigned:\n {idx_assigned}')
-
-            # assign bigger enough cost value(1e10) for already assigned anchors
-            # print(f"==> cost_non_assigned( > 0) {cost_non_assigned[:, matching_matrix.sum(0) > 0]}")
-            # print(f"==> cost_non_assigned( == 0) {cost_non_assigned[:, matching_matrix.sum(0) == 0]}")
-            # print(f"==> (min) cost_non_assigned {torch.min(cost_non_assigned, dim=0)[0]}")
-            # print(f"==> (min) cost_non_assigned {torch.min(cost_non_assigned, dim=0)}")
-            
             cost_non_assigned[:, matching_matrix.sum(0) > 0] = 1E10  
-            # print(f"after ==> cost_non_assigned( > 0) {cost_non_assigned[:, matching_matrix.sum(0) > 0]}")
-            # print(f"after ==> cost_non_assigned( == 0) {cost_non_assigned[:, matching_matrix.sum(0) == 0]}")
-            # for i, row in enumerate(cost_non_assigned):
-            #     for j, col in enumerate(row):
-            #         if col == 1e+10:
-            #             print(f'cost assigned col (1e10) =====> {(i, j)}')
-
-
-
-            # print('=====>cost_non_assigned\n', cost_non_assigned)
 
             # do linear sum assignment 
             cost_non_assigned_cpu = cost_non_assigned.cpu().numpy()
             i, j = linear_sum_assignment(cost_non_assigned_cpu)
 
-            # for idx, jj in enumerate(j):
-            #     if jj in idx_assigned:
-            #         print('===> conflict!!!!! :::::=> ', jj)
-            #         print('=====> i,j (cost_non_assigned_cpu) ', cost_non_assigned_cpu[i[idx]][j[idx]])
-            #         print('=====> j (cost) ', cost[:, j[idx]])
-
-
-            # print(f'linear sum assigned: ===> {i, j}')
-
             # create matching matrix non assigned
             matching_matrix_non_assigned = torch.zeros_like(cost_non_assigned, dtype=torch.uint8)
             matching_matrix_non_assigned[i, j] = 1
 
-            # print(f'matching_matrix_non_assigned: ===> {matching_matrix_non_assigned}')
-
-
             # update matching_matrix
             matching_matrix[matching_matrix.sum(1) == 0, :] = matching_matrix_non_assigned
-
 
         # check again if matching matrix still has conflicts
         # TODO: if still has conflicts, re-assign
         # assert (matching_matrix.sum(1) == 0).sum() == 0, '>>> Not all GTs have been assigned!'
-
-
         # assert (matching_matrix.sum(0) > 1).sum() == 0, '>>> Matching matrix still has conflicts!!!!!!!'
         # deal with conflict: filter out the anchor point has been assigned to many gts
         # anchor_matching_gt = matching_matrix.sum(0)

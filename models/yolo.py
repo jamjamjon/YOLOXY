@@ -403,6 +403,15 @@ if __name__ == '__main__':
     if opt.check:
         x = torch.rand(1, 3, 640, 640).to(device)
 
+        # Inception Like Conv
+        repconvs = RepConvs(c1=3, c2=64, k=3, s=2).to(device)
+        # repconvs.verify(x, verbose=True)
+
+        # repconvs.fuse()
+        _ = profile(input=x, ops=[repconvs], n=5, device=device)
+
+
+
         # p = PatchifyStem(3, 64, 3, 3)
         # print(p)
 
@@ -412,7 +421,7 @@ if __name__ == '__main__':
         # stem = Patchify(3, 64, 2).to(device)
         # print(stem(x).shape)
 
-        spd = SPD().to(device)
+        # spd = SPD().to(device)
         # print(spd(x).shape)
 
 
@@ -425,17 +434,17 @@ if __name__ == '__main__':
 
 
         # fused RepConv
-        repconv = RepConv(3, 64, 3, 1).to(device)
-        repconv.fuse_repconv()
+        # repconv = RepConv(3, 64, 3, 1).to(device)
+        # repconv.fuse_repconv()
 
-        y = repconv(x)
-        print(y.shape)
+        # y = repconv(x)
+        # print(y.shape)
 
         # patch_conv = PatchConv(64).to(device)
         # y = patch_conv(y)
 
-        y = spd(y)
-        print(y.shape)
+        # y = spd(y)
+        # print(y.shape)
 
         # repconv2 = RepConv(3, 64, 3, 1).to(device)
         # spd = SPD()

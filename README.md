@@ -8,16 +8,14 @@
 ## Pretained Models(To Be Continued...)
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
 |---|---|---|---|---|---
-|YOLOv5n-SiLU(v6.1)      		|640 |28.0 |1.9 |4.5 | -
-|**YOLOXY-Nano-half-head**    		|640 |**30.4**|**1.83**|**4.4** | -
-|**YOLOXY-Nano**      			|640 |**31.4**|**3.05**|**7.7** | -
+|YOLOv5n-SiLU(v6.1, 1:2:3:1)      		|640 |28.0 |1.9 |4.5 | -
 |**YOLOXY-n-baseline(1:1:3:1)**      	|640 |**(31.5)still training...**|**2.69**|**5.7** |-
-|**YOLOXY-n(1:3:9:1)**      		|640 | - |-|- |-
-|**YOLOXY-n(1:2:3:1)**      		|640 | - |-|- |-
-|YOLOv5s-SiLU(v6.1) 			|640 |37.4 |**7.23** |**16.53** |- 
-|YOLOX-s 				|640 |**40.5** |**9.0** |**26.8** | - 
-|**YOLOXY-n-Conv** 			|640 |39.3 |7.6  |17.9|-
+|**YOLOXY-n(1:3:9:1)**      			|640 |TODO... |-|- |-
+|YOLOv5s-SiLU(v6.1, 1:2:3:1) 			|640 |37.4 |**7.23** |**16.53** |- 
+|YOLOX-s 								|640 |**40.5** |**9.0** |**26.8** | - 
+|**YOLOXY-s-Conv** 						|640 |39.3 |7.6  |17.9|-
 |**[YOLOXY-n-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.67 |19.7	| -
+|**YOLOXY-s-baseline(1:1:3:1)**      	|640 |TODO...|| |-
 
 
 ## Installation
@@ -135,13 +133,15 @@ python export.py  --weights s.pt --img 640 --simplify  --include rknn --cali dat
 - [x] different branch has different branch head(TOOD, TAL)
 - [x] DBB, DBBConv() => Diverse Branch Block: Building a Convolution as an Inception-like Unit
 - [x] vari-focal loss in cls and obj; 
-- [ ] nano model: baseline, compare with yolov5;
+- [ ] nano model: baseline, yolov5 backbone;
+- [ ] Reparametizing backbone, remove some activations.(Testing on yolov5 now!) 
 
 - [ ] torchscript, tensorRT, coreML support   
 - [ ] more backbones experiments(PP-YOLOE, Transformer-based, ConvNext, ...)    
-- [ ] d-focal loss in box 
-- [ ] End2End => NMS Free
 - [ ] OC_tracker with kpt
-- [ ] ObjectBox
 - [ ] Instance segmentation
+
+- [ ] End2End => NMS Free
+- [ ] ObjectBox
+
 </details>
