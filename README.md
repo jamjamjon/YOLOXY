@@ -8,14 +8,14 @@
 ## Pretained Models(To Be Continued...)
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) | Speed<br><sup>GTX1080Ti b1(ms)
 |---|---|---|---|---|---
-|YOLOv5n-SiLU(v6.1)      		|640 |28.0 |1.9 |4.5 | **5.2**
-|**YOLOXY-Nano-half-head**    		|640 |**30.4**|**1.83**|**4.4** | 6.0
-|**YOLOXY-Nano**      			|640 |**31.4**|**3.05**|**7.7** | 6.1
-|**YOLOXY-n**      			|640 |**training...**|**2.82**|**5.5** | 7.0
-|YOLOv5s-SiLU(v6.1) 			|640 |37.4 |**7.23** |**16.53** |**8.2** 
+|YOLOv5n-SiLU(v6.1)      		|640 |28.0 |1.9 |4.5 | -
+|**YOLOXY-Nano-half-head**    		|640 |**30.4**|**1.83**|**4.4** | -
+|**YOLOXY-Nano**      			|640 |**31.4**|**3.05**|**7.7** | -
+|**YOLOXY-n**      			|640 |**(31.5)still training...**|**2.69**|**5.7** |-
+|YOLOv5s-SiLU(v6.1) 			|640 |37.4 |**7.23** |**16.53** |- 
 |YOLOX-s 				|640 |**40.5** |**9.0** |**26.8** | - 
 |**YOLOXY-n-Conv** 			|640 |39.3 |7.6  |17.9|-
-|**[YOLOXY-n-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.67 |19.7	| 9.5
+|**[YOLOXY-n-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.67 |19.7	| -
 
 
 ## Installation
