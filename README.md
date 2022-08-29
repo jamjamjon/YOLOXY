@@ -5,11 +5,17 @@
 - [ ] Instance Segmentation 
 
 
+# Updates
+2022.08.29: Nano model achieve 32.6mAP in coco val.
+
+
 ## Pretained Models 
 ### Nano
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) 
 |---|---|---|---|---
 |YOLOv5n-SiLU(v6.1, 1:2:3:1)      		|640 |28.0 |**1.9** |**4.5** | -
+|YOLOX-n      					|416 |25.8 |**0.91** |**1.08** | -
+|YOLOX-tiny      				|416 |32.8 |5.06 |6.45 | -
 |**[YOLOXY-N-baseline(1:1:3:1)](https://github.com/jamjamjon/YOLOXY/releases/download/v1.1/N.pt)**      	|640 |**32.6**|2.69|5.7 
 
 ### Small
