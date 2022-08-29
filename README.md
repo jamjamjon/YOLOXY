@@ -9,13 +9,12 @@
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) 
 |---|---|---|---|---
 |YOLOv5n-SiLU(v6.1, 1:2:3:1)      		|640 |28.0 |1.9 |4.5 | -
-|**YOLOXY-n-baseline(1:1:3:1)**      	|640 |**(31.5)not finished...**|**2.69**|**5.7** 
-|**YOLOXY-n(1:3:9:1)**      			|640 |TODO |-|- 
+|**YOLOXY-N-baseline(1:1:3:1)**      	|640 |**32.6**|**2.69**|**5.7** 
 |YOLOv5s-SiLU(v6.1, 1:2:3:1) 			|640 |37.4 |**7.23** |**16.53**  
 |YOLOX-s 								|640 |**40.5** |**9.0** |**26.8** 
-|**YOLOXY-s-Conv** 						|640 |39.3 |7.6  |17.9|-
-|**[YOLOXY-n-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.67 |19.7	
-|**YOLOXY-s-baseline(1:1:3:1)**      	|640 |TODO |-|-
+|YOLOXY-S-Conv 							|640 |39.3 |7.6  |17.9|-
+|**[YOLOXY-S-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.67 |19.7	
+|**YOLOXY-S-baseline(1:1:3:1)**      	|640 |TODO |-|-
 
 
 ## Installation
@@ -41,23 +40,24 @@ python detect.py --weights s.pt	--source 0  # webcam
 
 ## Test mAP
 ```
-python val.py --weights s.pt --data data/projects/coco.yaml
+python val.py --weights N.pt --data data/projects/coco.yaml
 ```
 ```
-Summary(s) 315 layers, 8673663 parameters, 19.7 GFLOPs, 40.4% mAP
+=> Summary(s) 296 layers, 2692111 parameters, 5.7 GFLOPs, 32.6% mAP
 
-Average Precision (AP) @[ IoU=0.50:0.95   | area= all | maxDets = 100 ] = 0.404
-Average Precision (AP) @[ IoU=0.50        | area= all | maxDets = 100 ] = 0.601
-Average Precision (AP) @[ IoU=0.75        | area= all | maxDets = 100 ] = 0.434
-Average Precision (AP) @[ IoU=0.50:0.95   | area=small| maxDets = 100 ] = 0.231
-Average Precision (AP) @[ IoU=0.50:0.95   | area= medium| maxDets=100 ] = 0.450
-Average Precision (AP) @[ IoU=0.50:0.95   | area= large | maxDets=100 ] = 0.533
-Average Recall    (AR) @[ IoU=0.50:0.95   | area= all | maxDets =   1 ] = 0.330
-Average Recall    (AR) @[ IoU=0.50:0.95   | area= all | maxDets =  10 ] = 0.542
-Average Recall    (AR) @[ IoU=0.50:0.95   | area= all | maxDets = 100 ] = 0.586
-Average Recall    (AR) @[ IoU=0.50:0.95 | area= small | maxDets = 100 ] = 0.415
-Average Recall    (AR) @[ IoU=0.50:0.95 | area=medium | maxDets = 100 ] = 0.640
-Average Recall    (AR) @[ IoU=0.50:0.95 | area= large | maxDets = 100 ] = 0.729
+Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.326
+Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.507
+Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.346
+Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.160
+Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.364
+Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.448
+Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.289
+Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.481
+Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.526
+Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.327
+Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.583
+Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.686
+
 ```
 
 ## Train For Object Detection
