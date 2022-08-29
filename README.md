@@ -10,7 +10,7 @@
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) 
 |---|---|---|---|---
 |YOLOv5n-SiLU(v6.1, 1:2:3:1)      		|640 |28.0 |1.9 |4.5 | -
-|**YOLOXY-N-baseline(1:1:3:1)**      	|640 |**32.6**|**2.69**|**5.7** 
+|**[YOLOXY-N-baseline(1:1:3:1)](https://github.com/jamjamjon/YOLOXY/releases/download/v1.1/N.pt)**      	|640 |**32.6**|**2.69**|**5.7** 
 
 ### Small
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) 
@@ -41,7 +41,7 @@ python detect.py --weights s.pt	--source 0  # webcam
 				  'path/*.jpg'  # glob
 				  'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP, RTMP, HTTP stream
 ```
-<img src="./data/docs/demo/face-5-demo.jpg" height="280"> <img src="./data/docs/demo/FADID-FACE-demo.bmp" height="280">
+<img src="./data/images/demo/FACE.jpg" height="280"> <img src="./data/images/demo/FADID-FACE.bmp" height="280">
 
 ## Test mAP
 ```
@@ -115,38 +115,3 @@ python export.py  --weights s.pt --img 640 --simplify  --include rknn --cali dat
 * [https://github.com/Megvii-BaseDetection/YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)
 * [https://github.com/PaddlePaddle/PaddleDetection](https://github.com/PaddlePaddle/PaddleDetection)
 
-
-## TODO List
-
-<details><summary> <b>Expand</b> </summary>
-
-- [x] sa block -> increse 0.8% map in xs model =====> to test(speed)
-- [x] siou
-- [x] close mosaic in the last 5% epochs
-- [x] hyps config
-- [x] byte_tracker 
-- [x] remove yolov5 parts
-- [x] rknn export parts
-- [x] rknn QNT calibration file: support dir(recommend), not only cali.txt
-- [x] RKNN C++ deploy code ref
-- [x] pose-estimation(keypoints detection) -> dataloader and model
-- [x] pose-estimation(keypoints detection) -> head and loss
-- [x] SimOTA bug fix(many2one): re-assign anchors for GTs whose anchors assigned before just have been removed
-- [x] AsymConv() used in stem part or some other parts, can not replace all Conv()! It will cause hard traning!
-- [x] Tasked alignment assignment in compute_loss()	
-- [x] add KPTs cost to cost matrix in order to align all task
-- [x] different branch has different branch head(TOOD, TAL)
-- [x] DBB, DBBConv() => Diverse Branch Block: Building a Convolution as an Inception-like Unit
-- [x] vari-focal loss in cls and obj; 
-- [ ] nano model: baseline, yolov5 backbone;
-- [ ] Reparametizing backbone, remove some activations.(Testing on yolov5 now!) 
-
-- [ ] torchscript, tensorRT, coreML support   
-- [ ] more backbones experiments(PP-YOLOE, Transformer-based, ConvNext, ...)    
-- [ ] OC_tracker with kpt
-- [ ] Instance segmentation
-
-- [ ] End2End => NMS Free
-- [ ] ObjectBox
-
-</details>
