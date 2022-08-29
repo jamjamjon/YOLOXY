@@ -9,15 +9,15 @@
 ### Nano
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) 
 |---|---|---|---|---
-|YOLOv5n-SiLU(v6.1, 1:2:3:1)      		|640 |28.0 |1.9 |4.5 | -
-|**[YOLOXY-N-baseline(1:1:3:1)](https://github.com/jamjamjon/YOLOXY/releases/download/v1.1/N.pt)**      	|640 |**32.6**|**2.69**|**5.7** 
+|YOLOv5n-SiLU(v6.1, 1:2:3:1)      		|640 |28.0 |**1.9** |**4.5** | -
+|**[YOLOXY-N-baseline(1:1:3:1)](https://github.com/jamjamjon/YOLOXY/releases/download/v1.1/N.pt)**      	|640 |**32.6**|2.69|5.7 
 
 ### Small
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>@640 (B) 
 |---|---|---|---|---
 |YOLOv5s-SiLU(v6.1, 1:2:3:1) 			|640 |37.4 |**7.23** |**16.53**  
-|YOLOX-s 								|640 |**40.5** |**9.0** |**26.8** 
-|YOLOXY-S-Conv 							|640 |39.3 |7.6  |17.9|-
+|YOLOX-s 								|640 |**40.5** |9.0 |26.8
+|YOLOXY-S-Conv 							|640 |**39.3** |7.6  |17.9|-
 |**[YOLOXY-S-RepConv-AsymConv](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/s.pt)** |640 |**40.4**     | 8.67 |19.7	
 |**YOLOXY-S-baseline(1:1:3:1)**      	|640 |TODO |-|-
 
