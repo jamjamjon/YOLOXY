@@ -205,9 +205,6 @@ class RepConvs(nn.Module):
     # 1xk Conv -------------------|
     # kx1 Conv -------------------|
     # ----------------------------|
-    # kxk Conv + 1x1 Conv 
-    # kxk Conv + kxk Conv 
-    # ----------------------------|
 
     def __init__(self, c1, c2, k=3, s=1, p=None, g=1, e=0.5, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super().__init__()
