@@ -179,7 +179,9 @@ def random_perspective(im,
 
     # Transform label coordinates
     n = len(targets)
+    new_segments = [] # seg
     if n:
+        # use seg
         use_segments = any(x.any() for x in segments)
         new = np.zeros((n, 4))
         if use_segments:  # warp segments
@@ -192,6 +194,8 @@ def random_perspective(im,
 
                 # clip
                 new[i] = segment2box(xy, width, height)
+
+                new_segments.append(xy)     # seg
 
         else:  # warp boxes
             xy = np.ones((n * 4, 3))
@@ -228,11 +232,16 @@ def random_perspective(im,
         targets = targets[i]
         targets[:, 1:5] = new[i]
 
+        # seg
+        if len(new_segments) > 0:
+            new_segments = np.array(new_segments)[i]    
+
         # keypoints
         if nk > 0:
             targets[:, 5:] = xy_kpts[i]
 
-    return im, targets
+    # return im, targets
+    return im, targets, new_segments  # seg
 
 
 def copy_paste(im, labels, segments, p=0.5):
@@ -286,12 +295,19 @@ def cutout(im, labels, p=0.5):
     return labels
 
 
-def mixup(im, labels, im2, labels2):
+
+def mixup(im, labels, segments, im2, labels2, segments2):
     # Applies MixUp augmentation https://arxiv.org/pdf/1710.09412.pdf
     r = np.random.beta(32.0, 32.0)  # mixup ratio, alpha=beta=32.0
     im = (im * r + im2 * (1 - r)).astype(np.uint8)
     labels = np.concatenate((labels, labels2), 0)
-    return im, labels
+
+    # new support for segmentation
+    if len(segments) > 0:
+        segments = np.concatenate((segments, segments2), 0)
+
+    return im, labels, segments
+
 
 
 def box_candidates(box1, box2, wh_thr=2, ar_thr=100, area_thr=0.1, eps=1e-16):  # box1(4,n), box2(4,n)

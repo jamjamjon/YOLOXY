@@ -122,12 +122,12 @@ class Loggers():
             self.wandb.log({"Labels": [wandb.Image(str(x), caption=x.name) for x in paths]})
 
 
-    def on_train_batch_start(self, ni, imgs, targets, paths, plots, nk, num_draw):
-        # Callback runs on train batch end
+    def on_train_batch_start(self, ni, imgs, targets, masks, paths, plots, nk, num_draw):
+        # Callback runs on train batch start
         if plots:
             if ni < num_draw:
                 f = self.save_dir / f'train_batch_{ni}.jpg'  # filename
-                plot_images(imgs, targets, paths, f, nk=nk)  
+                plot_images(imgs, targets, masks, paths, f, nk=nk)  
 
 
     def on_train_batch_end(self, ni, model, imgs, targets, paths, plots, nk):

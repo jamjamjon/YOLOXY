@@ -106,12 +106,12 @@ class ComputeLoss:
 
         self.device = next(model.parameters()).device  # get model device
         self.hyp = model.hyp  # hyperparameters
-        self.head = de_parallel(model).model[-1]  # Detect() module
+        self.Detect = de_parallel(model).model[-1]  # Detect() module
         self.ng = 0   # number of grid in every scale: 80x80 + 40x40 + 20x20
 
         # head attrs
         for x in ('nl', 'na', 'nc', 'stride', 'nk', 'no_det', 'no_kpt', 'no'):
-            setattr(self, x, getattr(self.head, x))
+            setattr(self, x, getattr(self.Detect, x))
         
         # Define criteria
         # self.LossFn_CLS = VariFL(gamma=2.0, alpha=0.75, reduction="none")   # Vari Focal Loss 
@@ -185,13 +185,13 @@ class ComputeLoss:
             # decode pred: [bs, 1, 80, 80, no] => [bs, 8400, no]
             # ------------------------------------------------------------------
             bs, _, h, w, _ = pred.shape   # [bs, na, 80, 80, no]
-            grid = self.head.grid[k].to(self.device)    # [80， 40， 20] 
+            grid = self.Detect.grid[k].to(self.device)    # [80， 40， 20] 
 
             # grid init at the 1st time
             if grid.shape[2:4] != pred.shape[2:4]:
                 yv, xv = torch.meshgrid([torch.arange(h), torch.arange(w)])
                 grid = torch.stack((xv, yv), 2).view(1, 1, h, w, 2).to(self.device)
-                self.head.grid[k] = grid    # [1, 1, 80, 80, 2]
+                self.Detect.grid[k] = grid    # [1, 1, 80, 80, 2]
 
             pred = pred.reshape(bs, self.na * h * w, -1)    # （bs, 80x80, -1）
             pred_scale = pred.clone()   # clone

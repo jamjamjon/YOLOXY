@@ -7,6 +7,7 @@ import os
 from copy import copy
 from pathlib import Path
 from urllib.error import URLError
+import contextlib
 
 import cv2
 import matplotlib
@@ -18,8 +19,9 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 
 from utils.general import (CONFIG_DIR, FONT, LOGGER, Timeout, check_font, check_requirements, clip_coords,
-                           increment_path, is_ascii, threaded, try_except, xywh2xyxy, xyxy2xywh)
+                           increment_path, is_ascii, threaded, try_except, xywh2xyxy, xyxy2xywh, binary_mask_to_polygon, get_paired_coord)
 from utils.metrics import fitness
+
 
 # Settings
 RANK = int(os.getenv('RANK', -1))
@@ -299,9 +301,8 @@ def output_to_target(output):
     return np.array(targets)
 
 
-
 # @threaded
-def plot_images(images, targets, paths=None, fname='images.jpg', names=None, 
+def plot_images(images, targets, masks, paths=None, fname='images.jpg', names=None, 
                 max_size=1920, max_subplots=25,
                 nk=0,
                 ):
@@ -311,6 +312,8 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None,
         images = images.cpu().float().numpy()
     if isinstance(targets, torch.Tensor):
         targets = targets.cpu().numpy()
+    if isinstance(masks, torch.Tensor):
+        masks = masks.cpu().numpy()
 
     # de-normalise (optional)
     if np.max(images[0]) <= 1:
@@ -393,7 +396,6 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None,
                 kpts[list(range(1, len(kpts), step))] += y
 
                 # filter point on the block line, 0 -> 480, 640
-                # print(f'=========>w, h {w, h}')
                 kpts = np.where(kpts % w == 0, 0, kpts)
                 kpts = np.where(kpts % h == 0, 0, kpts)
                 # kpts = np.where(kpts == x, 0, kpts)
@@ -414,6 +416,54 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None,
                         annotator.box_label(box, label, color=color, kpts=kpts[:, j], nk=nk)
                     else:
                         annotator.box_label(box, label, color=color, nk=nk)
+
+
+
+            # Plot masks
+            if masks.any():     # or, at least has one item is True(non-zero)
+                if masks.max() > 1.0:  # mean that masks are overlap
+                    # print(f'overlap')
+                    image_masks = masks[[i]]  # (1, 640, 640)
+                    nl = len(ti)
+                    index = np.arange(nl).reshape(nl, 1, 1) + 1     # (nl, 1, 1)
+                    image_masks = np.repeat(image_masks, nl, axis=0)
+                    image_masks = np.where(image_masks == index, 1.0, 0.0)
+
+                else:
+                    # print(f'not overlap')
+                    image_masks = masks[idx]
+
+                im = np.asarray(annotator.im).copy()
+                for j, box in enumerate(boxes.T.tolist()):
+                    if labels or conf[j] > 0.25:  # 0.25 conf thresh
+                        color = colors(classes[j])
+                        mh, mw = image_masks[j].shape
+                        if mh != h or mw != w:
+                            mask = image_masks[j].astype(np.uint8)
+                            mask = cv2.resize(mask, (w, h))
+                            mask = mask.astype(np.bool)
+                        else:
+                            mask = image_masks[j].astype(np.bool)
+
+                        # draw seg mask
+                        with contextlib.suppress(Exception):
+                            im[y:y + h, x:x + w, :][mask] = im[y:y + h, x:x + w, :][mask] * 0.4 + np.array(color) * 0.6
+
+                        # # draw contour line (not from segments points)
+                        # polygon = binary_mask_to_polygon(mask, tolerance=0)
+                        # polygon_points = get_paired_coord(polygon[0])  
+                        # polygon_points = np.array(polygon_points, dtype=np.int32)
+                        # cv2.polylines(im[y:y + h, x:x + w, :], [polygon_points], True, (255, 255, 255), 2)
+
+
+                annotator.im = im if isinstance(im, Image.Image) else Image.fromarray(im)
+                # annotator.im.show()
+
+                annotator.draw = ImageDraw.Draw(annotator.im)
+
+
+
+
 
     annotator.im.save(fname)  # save
 
@@ -563,7 +613,7 @@ def plot_labels(labels, names=(), save_dir=Path('')):
     plt.close()
 
 
-
+# TODO
 def plot_results(file='path/to/results.csv', dir=''):
     # Plot training results.csv. Usage: from utils.plots import *; plot_results('path/to/results.csv')
     save_dir = Path(file).parent if file else Path(dir)
@@ -588,6 +638,46 @@ def plot_results(file='path/to/results.csv', dir=''):
     ax[1].legend()
     fig.savefig(save_dir / 'results.png', dpi=200)
     plt.close()
+
+
+# TODO
+def plot_results_with_masks(file="path/to/results.csv", dir="", best=True):
+    # Plot training results.csv. Usage: from utils.plots import *; plot_results('path/to/results.csv')
+    save_dir = Path(file).parent if file else Path(dir)
+    fig, ax = plt.subplots(2, 8, figsize=(18, 6), tight_layout=True)
+    ax = ax.ravel()
+    files = list(save_dir.glob("results*.csv"))
+    assert len(files), f"No results.csv files found in {save_dir.resolve()}, nothing to plot."
+    for f in files:
+        try:
+            data = pd.read_csv(f)
+            index = np.argmax(
+                0.9 * data.values[:, 8] + 0.1 * data.values[:, 7] + 0.9 * data.values[:, 12] +
+                0.1 * data.values[:, 11],)
+            s = [x.strip() for x in data.columns]
+            x = data.values[:, 0]
+            for i, j in enumerate([1, 2, 3, 4, 5, 6, 9, 10, 13, 14, 15, 16, 7, 8, 11, 12]):
+                y = data.values[:, j]
+                # y[y == 0] = np.nan  # don't show zero values
+                ax[i].plot(x, y, marker=".", label=f.stem, linewidth=2, markersize=2)
+                if best:
+                    # best
+                    ax[i].scatter(index, y[index], color="r", label=f"best:{index}", marker="*", linewidth=3)
+                    ax[i].set_title(s[j] + f"\n{round(y[index], 5)}")
+                else:
+                    # last
+                    ax[i].scatter(x[-1], y[-1], color="r", label="last", marker="*", linewidth=3)
+                    ax[i].set_title(s[j] + f"\n{round(y[-1], 5)}")
+                # if j in [8, 9, 10]:  # share train and val loss y axes
+                #     ax[i].get_shared_y_axes().join(ax[i], ax[i - 5])
+        except Exception as e:
+            print(f"Warning: Plotting error for {f}: {e}")
+    ax[1].legend()
+    fig.savefig(save_dir / "results.png", dpi=200)
+    plt.close()
+
+
+
 
 
 def profile_idetection(start=0, stop=0, labels=(), save_dir=''):
@@ -637,3 +727,47 @@ def save_one_box(xyxy, im, file=Path('im.jpg'), gain=1.02, pad=10, square=False,
         # cv2.imwrite(f, crop)  # https://github.com/ultralytics/yolov5/issues/7007 chroma subsampling issue
         Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)).save(f, quality=95, subsampling=0)
     return crop
+
+
+# TODO: draw at detect
+def plot_masks(img, masks, colors, alpha=0.5):
+    """
+    Args:
+        img (tensor): img is in cuda, shape: [3, h, w], range: [0, 1]
+        masks (tensor): predicted masks on cuda, shape: [n, h, w]
+        colors (List[List[Int]]): colors for predicted masks, [[r, g, b] * n]
+    Return:
+        ndarray: img after draw masks, shape: [h, w, 3]
+
+    transform colors and send img_gpu to cpu for the most time.
+    """
+    img_gpu = img.clone()
+    num_masks = len(masks)
+    if num_masks == 0:
+        return img.permute(1, 2, 0).contiguous().cpu().numpy() * 255
+
+    # [n, 1, 1, 3]
+    # faster this way to transform colors
+    colors = torch.tensor(colors, device=img.device).float() / 255.0
+    colors = colors[:, None, None, :]
+    # [n, h, w, 1]
+    masks = masks[:, :, :, None]
+    masks_color = masks.repeat(1, 1, 1, 3) * colors * alpha
+    inv_alph_masks = masks * (-alpha) + 1
+    masks_color_summand = masks_color[0]
+    if num_masks > 1:
+        inv_alph_cumul = inv_alph_masks[:(num_masks - 1)].cumprod(dim=0)
+        masks_color_cumul = masks_color[1:] * inv_alph_cumul
+        masks_color_summand += masks_color_cumul.sum(dim=0)
+
+    # print(inv_alph_masks.prod(dim=0).shape) # [h, w, 1]
+    img_gpu = img_gpu.flip(dims=[0])  # filp channel for opencv
+    img_gpu = img_gpu.permute(1, 2, 0).contiguous()
+    # [h, w, 3]
+    img_gpu = img_gpu * inv_alph_masks.prod(dim=0) + masks_color_summand
+    return (img_gpu * 255).byte().cpu().numpy()
+
+
+
+
+

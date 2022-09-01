@@ -176,7 +176,9 @@ def run(
                                        workers=workers,
                                        prefix=colorstr(f'{task}: '),
                                        # nk=model.nk      # kpt
-                                       kpt_kit=model.kpt_kit
+                                       kpt_kit=model.kpt_kit,
+                                       # downsample_ratio=seg_downsample_rate,  # seg
+                                        # overlap=True   # seg
                                        )[0]
 
 
@@ -192,7 +194,8 @@ def run(
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5')  # progress bar
-    for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+    # for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+    for batch_i, (im, targets, paths, shapes, masks) in enumerate(pbar):
         callbacks.run('on_val_batch_start')
         t1 = time_sync()
         if cuda:
@@ -278,8 +281,8 @@ def run(
         # Plot images
         # TODO: callbacks.run('on_val_batch_start', ni, imgs, targets, paths, plots, nk, 10)  # plot batch images
         if plots and batch_i < 10:
-            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, nk=model.nk)  # labels
-            plot_images(im, output_to_target(out), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=model.nk)  # pred
+            plot_images(im, targets, masks, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, nk=model.nk)  # labels
+            plot_images(im, output_to_target(out), masks, paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=model.nk)  # pred
 
         callbacks.run('on_val_batch_end')
 
@@ -355,7 +358,7 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default=ROOT / 'data/projects/coco128.yaml', help='dataset.yaml path')
+    parser.add_argument('--data', type=str, default=ROOT / 'data/datasets/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default='', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')

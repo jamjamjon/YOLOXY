@@ -17,6 +17,7 @@ import requests
 import torch
 import torch.nn as nn
 from torch.cuda import amp
+from collections import OrderedDict
 
 from models.nms import non_max_suppression
 from models.common import *
@@ -28,167 +29,13 @@ from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import copy_attr, time_sync
 
 
-
-# TODO: different branch has different branch head
-class HeadBranch(nn.Module):
-    # Head Branch Conv Block Before Output
-    def __init__(self, c1, c2):
-        super().__init__()
-        self.dwconv = DWConv(c1, c1, 3)
-        self.conv = Conv(c1, c1, 1)
-        # self.conv = Conv(c1, c1, 3)
-        # self.conv = AsymConv(c1, c1, 3)
-        self.conv2d = nn.Conv2d(c1, c2, 1)
-
-    def forward(self, x):
-        return self.conv2d(self.conv(self.dwconv(x)))
-        # return self.conv2d(self.conv(x))
-        # return self.conv2d(x)
-
-
-class HydraHead(nn.Module):
-    # Decoupled Hydra Head
-    def __init__(self, c1, nc=80, na=1, nk=0):  # ch_in, num_classes, num_anchors, num_keypoints
-        super().__init__()
-        self.na = na    # number of anchors
-        self.nc = nc    # number of classes
-        self.nk = nk    # number of keypoints
-
-
-        c_ = min(c1, 256)  # min(c1, nc * na)
-        self.cv1 = Conv(c1, c_, 1)      # stem
-        # self.cv2 = Conv(c_, c_, 3)    # TODO   
-        self.cv2 = AsymConv(c_, c_, 3)  #   
-
-        # Head Branch Conv Block To replace single 1x1 conv2d
-        self.conv_box = HeadBranch(c_, na * 4)      # box => x,y,w,h
-        self.conv_obj = HeadBranch(c_, na * 1)      # obj  
-        self.conv_cls = HeadBranch(c_, na * nc)      # cls
-        if self.nk > 0:
-            self.conv_kpt = HeadBranch(c_, na * nk * 3)      # kpt => x,y,conf
-        
-        
-    def forward(self, x):
-        bs, nc, ny, nx = x.shape  # BCHW
-
-        # x = self.cv1(x)
-        x = self.cv2(self.cv1(x))
-        x_box, x_obj, x_cls = self.conv_box(x), self.conv_obj(x), self.conv_cls(x)     # box, obj, cls
-        if self.nk > 0:
-            x_kpt = self.conv_kpt(x)     # cls
-        
-        # outputs list
-        xs = [x_obj.view(bs, self.na, 1, ny, nx), 
-              x_box.view(bs, self.na, 4, ny, nx), 
-              x_cls.view(bs, self.na, self.nc, ny, nx)]
-        if self.nk > 0:
-            xs.append(x_kpt.view(bs, self.na, self.nk * 3, ny, nx))
-
-        return torch.cat(xs, 2).view(bs, -1, ny, nx)
-
-
-# ------------- New Head ---------------------------------------
-class BranchAttn(nn.Module):
-    # head(layer) attention block
-    def __init__(self, c1):
-        super().__init__()
-        self.gap = nn.AdaptiveAvgPool2d((1, 1))     # GAP
-        self.fc = nn.Conv2d(c1, c1, 1)
-        self.sigmoid = nn.Sigmoid()
-        self.conv = Conv(c1, c1, 1)
-    
-    def forward(self, x):
-        return self.conv(x * self.sigmoid(self.fc(self.gap(x))))     # weighted x
-
-
-class Branch(nn.Module):
-    # xxx Branch In Head 
-    def __init__(self, c1, c2, add=False):
-        super().__init__()
-        self.attn = BranchAttn(c1)
-        self.conv2d = nn.Conv2d(c1, c2, 1)
-        self.add = add
-
-    def forward(self, x):
-        return self.conv2d(x + self.attn(x)) if self.add else self.conv2d(self.attn(x))
-
-
-class HydraXHead(nn.Module):
-    # Hydra X Head
-    def __init__(self, c1, nc=80, na=1, nk=0):  # ch_in, num_classes, num_anchors, num_keypoints
-        super().__init__()
-        self.na = na    # number of anchors
-        self.nc = nc    # number of classes
-        self.nk = nk    # number of keypoints
-        c_ = min(c1, 256) 
-        
-        self.stem = Conv(c1, c_, 1)     # stem
-        self.cv2 = AsymConv(c_, c_, 3)  # TODO: keep ?     Conv(c_, c_, 3)
-
-        self.conv_cls = Branch(c_, nc * na, add=True)     # cls branch
-        self.conv_box = Branch(c_, 4 * na, add=False)      # box branch => x,y,w,h
-        self.conv_obj = Branch(c_, 1 * na, add=False)      # obj branch
-        if self.nk > 0:
-            self.conv_kpt = Branch(c_, 3 * nk * na, add=False)      # kpt branch => x,y,conf
-        
-    def forward(self, x):
-        bs, nc, ny, nx = x.shape  # BCHW
-
-        x = self.cv2(self.stem(x))
-        x_box, x_obj, x_cls = self.conv_box(x), self.conv_obj(x), self.conv_cls(x)      # output => box, obj, cls
-        if self.nk > 0:
-            x_kpt = self.conv_kpt(x)     # output => kpt
-        
-        # outputs list
-        xs = [x_obj.view(bs, self.na, 1, ny, nx), 
-              x_box.view(bs, self.na, 4, ny, nx), 
-              x_cls.view(bs, self.na, self.nc, ny, nx)]
-        if self.nk > 0:
-            xs.append(x_kpt.view(bs, self.na, self.nk * 3, ny, nx))
-
-        return torch.cat(xs, 2).view(bs, -1, ny, nx)
-# ------------- New Head ---------------------------------------
-
-# Deprecated, to remove
-class Decouple(nn.Module):
-    # Decoupled head
-    def __init__(self, c1, nc=80, na=1):  # ch_in, num_classes, num_anchors
-        super().__init__()
-        self.na = na  # number of anchors
-        self.nc = nc  # number of classes
-
-        c_ = min(c1, 256)  # min(c1, nc * na)
-        # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
-
-        self.a = Conv(c1, c_, 1)        # stem
-        self.bc = Conv(c_, c_, 3)     # fused b,c brach 
-        # self.bc = CrossConv(c_, c_, 3, 1)
-
-        self.b1 = nn.Conv2d(c_, na * 4, 1)      # box
-        self.b2 = nn.Conv2d(c_, na * 1, 1)      # obj  
-        self.c = nn.Conv2d(c_, na * nc, 1)      # cls
-
-
-    def forward(self, x):
-        bs, nc, ny, nx = x.shape  # BCHW
-        x = self.bc(self.a(x))
-        b_box = self.b1(x)     # box
-        b_obj = self.b2(x)     # obj
-        c = self.c(x)         # cls
-        
-        return torch.cat((b_obj.view(bs, self.na, 1, ny, nx), 
-                          b_box.view(bs, self.na, 4, ny, nx), 
-                          c.view(bs, self.na, self.nc, ny, nx)), 2).view(bs, -1, ny, nx)
-
-
-
 class Detect(nn.Module):
     # Anchor free Detect Layer
     stride = None  # strides computed during build
     export = False  # export mode
     export_raw = False  # export raw mode, for those not support complex operators like ScatterND, GatherND, ... 
 
-    def __init__(self, nc=80, nk=0, ch=(), inplace=True):  # detection layer
+    def __init__(self, head=nn.Conv2d, nc=80, nk=0, ch=(), inplace=True):  # detection layer
         super().__init__()
         # CONSOLE.log(log_locals=True)      # local variables
         self.nc = nc        # number of classes
@@ -200,8 +47,13 @@ class Detect(nn.Module):
         self.na = self.anchors = 1    # number of anchors 
         self.grid = [torch.zeros(1)] * self.nl    # girds for every scales
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
-        self.m = nn.ModuleList(HydraHead(x, self.nc, self.na, self.nk) for x in ch)  # hydra head
-        # self.m = nn.ModuleList(HydraXHead(x, self.nc, self.na, self.nk) for x in ch)  # new hydra x head
+
+        # TODO: head
+        self.head = head
+        if self.head in (HydraXHead, ):
+            self.m = nn.ModuleList(self.head(x, self.nc, self.na, self.nk) for x in ch)  # new hydra x head
+        elif self.head is nn.Conv2d:
+            self.m = nn.ModuleList(self.head(x, self.no * self.na, 1) for x in ch)  # output conv
 
 
     def forward(self, x):
@@ -264,6 +116,245 @@ class Detect(nn.Module):
                 z.append(y.view(bs, -1, self.no))
 
         return x_raw if self.export_raw else x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)  # x not do sigmoid(), while z did
+
+
+
+class HydraXHead(nn.Module):
+    # Decoupled Hydra Head
+    def __init__(self, c1, nc=80, na=1, nk=0, ns=0):  # ch_in, num_classes, num_anchors, num_keypoints
+        super().__init__()
+        self.na = na    # number of anchors
+        self.nc = nc    # number of classes
+        self.nk = nk    # number of keypoints
+        self.ns = ns    # TODO
+
+        # hidden layers
+        c_ = min(c1, 256)  # min(c1, nc * na)
+
+        self.stem = nn.Sequential(OrderedDict([
+            ('cv1', Conv(c1, c_, 1)),
+            ('crossconv', CrossConv(c_, c_, 3)),  
+            # ('cv2', AsymConv(c_, c_, 3)),
+            # ('conv', RepConvs(c_, c_, 3)),  # better than AsymConv but with high training cost
+        ]))
+
+        # box head branch box => x,y,w,h
+        self.conv_box = nn.Sequential(OrderedDict([
+            ('dwconv', DWConv(c_, c_, 3)),
+            ('conv', Conv(c_, c_, 1)),
+            ('conv2d', nn.Conv2d(c_, na * 4, 1)),
+
+            # ('gsconv', GSConv(c_, c_, 3)),
+            # ('CrossConv', CrossConv(c_, c_, 3)),
+            # ('conv', Conv(c1, c1, 3)),
+            # ('conv', AsymConv(c1, c1, 3)),
+
+            # ---------------------------------------------------------------------
+            #       Attention    block
+            # ---------------------------------------------------------------------
+
+            # ('gap', nn.AdaptiveAvgPool2d((1, 1))),
+            # ('fc', nn.Conv2d(c1, c1, 1)),
+            # ('sigmoid', nn.Sigmoid()),
+            # ('conv', Conv(c_, c_, 1)),
+            # ---------------------------------------------------------------------
+        ]))
+
+        # obj head branch
+        self.conv_obj = nn.Sequential(OrderedDict([
+            ('dwconv', DWConv(c_, c_, 3)),
+            ('conv', Conv(c_, c_, 1)),
+            ('conv2d', nn.Conv2d(c_, na * 1, 1)),
+        ]))
+
+        # cls head branch
+        self.conv_cls = nn.Sequential(OrderedDict([
+            ('dwconv', DWConv(c_, c_, 3)),
+            ('conv', Conv(c_, c_, 1)),
+            ('conv2d', nn.Conv2d(c_, na * nc, 1)),
+        ]))
+
+        # kpt head branch
+        if self.nk > 0:
+            # self.conv_kpt = HeadBranch(c_, na * nk * 3)      # kpt => x,y,conf
+            self.conv_kpt = nn.Sequential(OrderedDict([
+                ('dwconv', DWConv(c_, c_, 3)),
+                ('conv', Conv(c_, c_, 1)),
+                ('conv2d', nn.Conv2d(c_, na * nk, 1)),
+            ]))
+
+        
+    def forward(self, x):
+        bs, nc, ny, nx = x.shape  # BCHW
+
+        x = self.stem(x)
+        x_box, x_obj, x_cls = self.conv_box(x), self.conv_obj(x), self.conv_cls(x)     # box, obj, cls
+        if self.nk > 0:
+            x_kpt = self.conv_kpt(x)     # cls
+        
+        # outputs list
+        xs = [x_obj.view(bs, self.na, 1, ny, nx), 
+              x_box.view(bs, self.na, 4, ny, nx), 
+              x_cls.view(bs, self.na, self.nc, ny, nx)]
+        if self.nk > 0:
+            xs.append(x_kpt.view(bs, self.na, self.nk * 3, ny, nx))
+
+        return torch.cat(xs, 2).view(bs, -1, ny, nx)
+
+
+
+
+# # TODO: different branch has different branch head
+# class HeadBranch(nn.Module):
+#     # Head Branch Conv Block Before Output
+#     def __init__(self, c1, c2):
+#         super().__init__()
+#         self.dwconv = DWConv(c1, c1, 3)
+#         self.conv = Conv(c1, c1, 1)
+#         # self.conv = Conv(c1, c1, 3)
+#         # self.conv = AsymConv(c1, c1, 3)
+#         self.conv2d = nn.Conv2d(c1, c2, 1)
+
+#     def forward(self, x):
+#         return self.conv2d(self.conv(self.dwconv(x)))
+#         # return self.conv2d(self.conv(x))
+#         # return self.conv2d(x)
+
+# class HydraHead(nn.Module):
+#     # Decoupled Hydra Head
+#     def __init__(self, c1, nc=80, na=1, nk=0):  # ch_in, num_classes, num_anchors, num_keypoints
+#         super().__init__()
+#         self.na = na    # number of anchors
+#         self.nc = nc    # number of classes
+#         self.nk = nk    # number of keypoints
+
+
+#         c_ = min(c1, 256)  # min(c1, nc * na)
+#         self.cv1 = Conv(c1, c_, 1)      # stem
+#         # self.cv2 = Conv(c_, c_, 3)    # TODO   
+#         self.cv2 = AsymConv(c_, c_, 3)  #   
+
+#         # Head Branch Conv Block To replace single 1x1 conv2d
+#         self.conv_box = HeadBranch(c_, na * 4)      # box => x,y,w,h
+#         self.conv_obj = HeadBranch(c_, na * 1)      # obj  
+#         self.conv_cls = HeadBranch(c_, na * nc)      # cls
+#         if self.nk > 0:
+#             self.conv_kpt = HeadBranch(c_, na * nk * 3)      # kpt => x,y,conf
+        
+        
+#     def forward(self, x):
+#         bs, nc, ny, nx = x.shape  # BCHW
+
+#         # x = self.cv1(x)
+#         x = self.cv2(self.cv1(x))
+#         x_box, x_obj, x_cls = self.conv_box(x), self.conv_obj(x), self.conv_cls(x)     # box, obj, cls
+#         if self.nk > 0:
+#             x_kpt = self.conv_kpt(x)     # cls
+        
+#         # outputs list
+#         xs = [x_obj.view(bs, self.na, 1, ny, nx), 
+#               x_box.view(bs, self.na, 4, ny, nx), 
+#               x_cls.view(bs, self.na, self.nc, ny, nx)]
+#         if self.nk > 0:
+#             xs.append(x_kpt.view(bs, self.na, self.nk * 3, ny, nx))
+
+#         return torch.cat(xs, 2).view(bs, -1, ny, nx)
+
+
+
+# # ------------- New Head ---------------------------------------
+# class BranchAttn(nn.Module):
+#     # head(layer) attention block
+#     def __init__(self, c1):
+#         super().__init__()
+#         self.gap = nn.AdaptiveAvgPool2d((1, 1))     # GAP
+#         self.fc = nn.Conv2d(c1, c1, 1)
+#         self.sigmoid = nn.Sigmoid()
+#         self.conv = Conv(c1, c1, 1)
+    
+#     def forward(self, x):
+#         return self.conv(x * self.sigmoid(self.fc(self.gap(x))))     # weighted x
+
+
+# class Branch(nn.Module):
+#     # xxx Branch In Head 
+#     def __init__(self, c1, c2, add=False):
+#         super().__init__()
+#         self.attn = BranchAttn(c1)
+#         self.conv2d = nn.Conv2d(c1, c2, 1)
+#         self.add = add
+
+#     def forward(self, x):
+#         return self.conv2d(x + self.attn(x)) if self.add else self.conv2d(self.attn(x))
+
+
+# class HydraXHead(nn.Module):
+#     # Hydra X Head
+#     def __init__(self, c1, nc=80, na=1, nk=0):  # ch_in, num_classes, num_anchors, num_keypoints
+#         super().__init__()
+#         self.na = na    # number of anchors
+#         self.nc = nc    # number of classes
+#         self.nk = nk    # number of keypoints
+#         c_ = min(c1, 256) 
+        
+#         self.stem = Conv(c1, c_, 1)     # stem
+#         self.cv2 = AsymConv(c_, c_, 3)  # TODO: keep ?     Conv(c_, c_, 3)
+
+#         self.conv_cls = Branch(c_, nc * na, add=True)     # cls branch
+#         self.conv_box = Branch(c_, 4 * na, add=False)      # box branch => x,y,w,h
+#         self.conv_obj = Branch(c_, 1 * na, add=False)      # obj branch
+#         if self.nk > 0:
+#             self.conv_kpt = Branch(c_, 3 * nk * na, add=False)      # kpt branch => x,y,conf
+        
+#     def forward(self, x):
+#         bs, nc, ny, nx = x.shape  # BCHW
+
+#         x = self.cv2(self.stem(x))
+#         x_box, x_obj, x_cls = self.conv_box(x), self.conv_obj(x), self.conv_cls(x)      # output => box, obj, cls
+#         if self.nk > 0:
+#             x_kpt = self.conv_kpt(x)     # output => kpt
+        
+#         # outputs list
+#         xs = [x_obj.view(bs, self.na, 1, ny, nx), 
+#               x_box.view(bs, self.na, 4, ny, nx), 
+#               x_cls.view(bs, self.na, self.nc, ny, nx)]
+#         if self.nk > 0:
+#             xs.append(x_kpt.view(bs, self.na, self.nk * 3, ny, nx))
+
+#         return torch.cat(xs, 2).view(bs, -1, ny, nx)
+# ------------- New Head ---------------------------------------
+
+# # Deprecated, to remove
+# class Decouple(nn.Module):
+#     # Decoupled head
+#     def __init__(self, c1, nc=80, na=1):  # ch_in, num_classes, num_anchors
+#         super().__init__()
+#         self.na = na  # number of anchors
+#         self.nc = nc  # number of classes
+
+#         c_ = min(c1, 256)  # min(c1, nc * na)
+#         # c_ = min(c1 // 2, 256)  # min(c1, nc * na)   
+
+#         self.a = Conv(c1, c_, 1)        # stem
+#         self.bc = Conv(c_, c_, 3)     # fused b,c brach 
+#         # self.bc = CrossConv(c_, c_, 3, 1)
+
+#         self.b1 = nn.Conv2d(c_, na * 4, 1)      # box
+#         self.b2 = nn.Conv2d(c_, na * 1, 1)      # obj  
+#         self.c = nn.Conv2d(c_, na * nc, 1)      # cls
+
+
+#     def forward(self, x):
+#         bs, nc, ny, nx = x.shape  # BCHW
+#         x = self.bc(self.a(x))
+#         b_box = self.b1(x)     # box
+#         b_obj = self.b2(x)     # obj
+#         c = self.c(x)         # cls
+        
+#         return torch.cat((b_obj.view(bs, self.na, 1, ny, nx), 
+#                           b_box.view(bs, self.na, 4, ny, nx), 
+#                           c.view(bs, self.na, self.nc, ny, nx)), 2).view(bs, -1, ny, nx)
+
 
 
 

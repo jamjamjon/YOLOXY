@@ -1,4 +1,4 @@
-# Hyperparameters for low-augmentation COCO training from scratch
+# Hyperparameters 
 
 lr0: 0.01  # initial learning rate (SGD=1E-2, Adam=1E-3)
 lrf: 0.01  # final OneCycleLR learning rate (lr0 * lrf)
@@ -8,12 +8,6 @@ warmup_epochs: 3.0  # warmup epochs (fractions ok)
 warmup_momentum: 0.8  # warmup initial momentum
 warmup_bias_lr: 0.1  # warmup initial bias lr
 
-# yolov5
-# box: 0.05  # box loss gain
-# cls: 0.5  # cls loss gain
-# cls_pw: 1.0  # cls BCELoss positive_weight
-# obj: 1.0  # obj loss gain (scale with pixels) 
-# obj_pw: 1.0  # obj BCELoss positive_weight
 
 #-----------------
 # about loss gain
@@ -28,13 +22,9 @@ kpt: 5.5        # TODO: kpt loss gain, not required unless adjust
 
 # coco human pose specific weights of kpts. You can simplify annotate this if you dont want use.
 kpt_weights: [.026, .025, .025, .035, .035, .079, .079, .072, .072, .062, .062, .107, .107, .087, .087, .089, .089]   # not required unless adjust
-# center_radius: 2.5  # not required unless adjust
-
-
 
 
 # Data Augmentation
-# fl_gamma: 0.0  # focal loss gamma (efficientDet default gamma=1.5)
 hsv_h: 0.015  # image HSV-Hue augmentation (fraction)
 hsv_s: 0.7  # image HSV-Saturation augmentation (fraction)
 hsv_v: 0.4  # image HSV-Value augmentation (fraction)
@@ -43,8 +33,6 @@ translate: 0.1  # image translation (+/- fraction)
 scale: 0.5  # image scale (+/- gain)
 shear: 0.0  # image shear (+/- deg)
 perspective: 0.0  # image perspective (+/- fraction), range 0-0.001
-
-
 flipud: 0.0  # image flip up-down (probability)
 fliplr: 0.5  # image flip left-right (probability)
 mosaic: 1.0  # image mosaic (probability)
