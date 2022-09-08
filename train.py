@@ -184,6 +184,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']   # cos annealing
     else:
         lf = lambda x: (1 - x / epochs) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear default
+
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)  
     # plot_lr_scheduler(optimizer, scheduler, epochs)
 

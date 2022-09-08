@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from models.common import *
 
 
+
 class GSConv(nn.Module):
     # GSConv https://github.com/AlanLi1997/slim-neck-by-gsconv
     def __init__(self, c1, c2, k=1, s=1, g=1, act=True):
@@ -217,6 +218,11 @@ class RepBottleneck(nn.Module):
 
         print(f'>> Difference betweeen y and y_fused: {((y_fused - y) ** 2).sum()}')
 
+import torch.nn.functional as F
+from timm.models.layers import trunc_normal_, DropPath
+from timm.models.registry import register_model
+
+
 
 
 class RepConvs(nn.Module):
@@ -230,9 +236,7 @@ class RepConvs(nn.Module):
     # 1xk Conv -------------------|
     # kx1 Conv -------------------|
     # ----------------------------|
-    # kxk Conv + 1x1 Conv 
-    # kxk Conv + kxk Conv 
-    # ----------------------------|
+
 
     def __init__(self, c1, c2, k=3, s=1, p=None, g=1, e=0.5, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super().__init__()
@@ -451,6 +455,7 @@ class RepConvs(nn.Module):
         y_fused = self.forward(x)
 
         print(f'>> Difference betweeen y and y_fused: {((y_fused - y) ** 2).sum()}')
+
 
 
 # ------------------------------------------------
