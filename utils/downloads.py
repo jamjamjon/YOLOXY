@@ -52,7 +52,7 @@ def safe_download(file, url, url2=None, min_bytes=1E0, error_msg=''):
         LOGGER.info('')
 
 
-def attempt_download(file, repo='jamjamjon/YOLOXY', release='v1.1'):
+def attempt_download(file, repo='jamjamjon/YOLOXY', release='v1.0'):
     # Attempt file download from GitHub release assets if not found locally. release = 'latest', 'v6.1', etc.
     from utils.general import LOGGER
 

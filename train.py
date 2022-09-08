@@ -268,7 +268,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                         downsample_ratio=seg_downsample_rate,  # seg
                                         # overlap=True   # seg
                                         )[0]
-
         if not resume:
             labels = np.concatenate(dataset.labels, 0)
             # c = torch.tensor(labels[:, 0])  # classes
@@ -278,9 +277,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 plot_labels(labels, names, save_dir)
 
             model.half().float()  # pre-reduce anchor precision
-
         callbacks.run('on_pretrain_routine_end')
-
 
 
     # DDP mode
@@ -355,16 +352,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
             callbacks.run('on_train_batch_start', ni, imgs, targets, masks, paths, plots, nk, 10)  # plot batch images
-
-            # if i < 5:
-            #     plot_images(imgs, targets, masks, paths, f'mask_{i}.jpg', nk=nk) 
-
-            # else:
-            #     exit()
-
-            # print('--------------done draw--------------------')
-            # continue
-
 
             # Warmup
             if ni <= nw:
