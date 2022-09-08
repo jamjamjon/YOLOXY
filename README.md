@@ -7,8 +7,8 @@
 
 
 # Updates
-==> 2022.08.29: **Nano** size model achieve **32.6% mAP** in coco val with **2.69M params** and **5.7GFLOPs**\
-==> 2022.09.08: **Nano** size model achieve **33.8% mAP** in coco val with **2.35M params** and **5.2GFLOPs**
+==> 2022.08.29: **Nano** size model achieve **32.6% mAP** (coco2017 val) with **2.69M params** and **5.7GFLOPs**\
+==> 2022.09.08: **Nano** size model achieve **33.8% mAP** (coco2017 val) with **2.35M params** and **5.2GFLOPs**
 
 
 ## Pretained Models 
