@@ -49,8 +49,9 @@ python detect.py --weights N.pt	--source 0  # webcam
 				  'path/*.jpg'  # glob
 				  'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP, RTMP, HTTP stream
 ```
-<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" height="500">\
-<img src="./data/images/demo/FACE.jpg" height="280"> <img src="./data/images/demo/FADID-FACE.bmp" height="280">
+<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FACE.jpg" height="280"> <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" height="280">\
+<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" height="500">
+
 
 ## Test mAP
 ```
