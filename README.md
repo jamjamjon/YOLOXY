@@ -1,7 +1,8 @@
-# YOLOXY: Common 2D computer vision task with YOLO.
+# YOLOXY(Anchor Free): Common 2D computer vision task with YOLO.
 
 - [x] Object Detection
 - [x] Keypoint Detection
+- [x] Multi Objects Tracking(ByteTrack)
 - [ ] Instance Segmentation(SparseInst, YOLACT)
 - [ ] Model Prune
 
@@ -51,6 +52,11 @@ python detect.py --weights N.pt	--source 0  # webcam
 ```
 <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FACE.jpg" height="280"> <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" height="280">\
 <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" height="500">
+
+## Multi Objects Tracking
+```bash
+python detect.py --weights N.pt	--source rtsp://admin:admin12345@192.168.0.188/h264 --tracking
+```
 
 
 ## Test mAP
