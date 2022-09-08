@@ -1,4 +1,6 @@
-
+"""
+validation
+"""
 
 import argparse
 import json
@@ -174,7 +176,9 @@ def run(
                                        workers=workers,
                                        prefix=colorstr(f'{task}: '),
                                        # nk=model.nk      # kpt
-                                       kpt_kit=model.kpt_kit
+                                       kpt_kit=model.kpt_kit,
+                                       # downsample_ratio=seg_downsample_rate,  # seg
+                                        # overlap=True   # seg
                                        )[0]
 
 
@@ -182,20 +186,16 @@ def run(
     confusion_matrix = ConfusionMatrix(nc=nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ('%20s' + '%11s' * 6) % ('CLASS', 'nIMAGES', 'nLABLES', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
+    s = ('%20s' + '%11s' * 6) % ('CLASS', 'IMAGES', 'LABLES', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
     # TODO: mloss setting remove loss
     loss = torch.zeros(4, device=device)  # mean losses
-    # if model.tag in ('YOLOX', 'yolox'):
-    #     loss = torch.zeros(4, device=device)  # mean losses
-    # elif model.tag in ('YOLOV5', 'yolov5'):
-    #     loss = torch.zeros(3, device=device)  # mean losses
-
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5')  # progress bar
-    for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+    # for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+    for batch_i, (im, targets, paths, shapes, masks) in enumerate(pbar):
         callbacks.run('on_val_batch_start')
         t1 = time_sync()
         if cuda:
@@ -281,8 +281,8 @@ def run(
         # Plot images
         # TODO: callbacks.run('on_val_batch_start', ni, imgs, targets, paths, plots, nk, 10)  # plot batch images
         if plots and batch_i < 10:
-            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, nk=model.nk)  # labels
-            plot_images(im, output_to_target(out), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=model.nk)  # pred
+            plot_images(im, targets, masks, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, nk=model.nk)  # labels
+            plot_images(im, output_to_target(out), masks, paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=model.nk)  # pred
 
         callbacks.run('on_val_batch_end')
 
@@ -358,7 +358,7 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default=ROOT / 'data/projects/coco128.yaml', help='dataset.yaml path')
+    parser.add_argument('--data', type=str, default=ROOT / 'data/datasets/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default='', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')

@@ -25,9 +25,11 @@ from PIL import ExifTags, Image, ImageOps
 from torch.utils.data import DataLoader, Dataset, dataloader, distributed
 from tqdm import tqdm
 
+
 from utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective
 from utils.general import (DATASETS_DIR, LOGGER, NUM_THREADS, check_dataset, check_requirements, check_yaml, clean_str,
-                           cv2, is_colab, is_kaggle, segments2boxes, xyn2xy, xywh2xyxy, xywhn2xyxy, xyxy2xywhn)
+                           cv2, is_colab, is_kaggle, segments2boxes, xyn2xy, xywh2xyxy, 
+                            xywhn2xyxy, xyxy2xywhn, polygons2masks, polygons2masks_overlap)
 from utils.torch_utils import torch_distributed_zero_first
 
 # Parameters
@@ -108,6 +110,8 @@ def create_dataloader(path,
                       shuffle=False,
                       # nk=0,
                       kpt_kit=None,
+                      downsample_ratio=1,  # seg
+                      overlap=True   # seg
                       ):
     if rect and shuffle:
         LOGGER.warning('WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False')
@@ -128,6 +132,8 @@ def create_dataloader(path,
             prefix=prefix,
             # nk=nk
             kpt_kit=kpt_kit,
+            downsample_ratio=downsample_ratio,  # seg
+            overlap=overlap   # seg
             )
 
     batch_size = min(batch_size, len(dataset))
@@ -141,7 +147,8 @@ def create_dataloader(path,
                   num_workers=nw,
                   sampler=sampler,
                   pin_memory=True,
-                  collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn), dataset
+                  collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn
+                  ), dataset
 
 
 class InfiniteDataLoader(dataloader.DataLoader):
@@ -419,6 +426,8 @@ class LoadImagesAndLabels(Dataset):
                  prefix='',
                  # nk=0,
                  kpt_kit=None,
+                 downsample_ratio=1,  # seg
+                 overlap=False   # seg
                  ):
         self.img_size = img_size
         self.augment = augment
@@ -430,6 +439,10 @@ class LoadImagesAndLabels(Dataset):
         self.stride = stride
         self.path = path
         self.albumentations = Albumentations() if augment else None
+
+        # seg
+        self.downsample_ratio = downsample_ratio
+        self.overlap = overlap
 
         # kpt
         self.kpt_kit = kpt_kit
@@ -471,6 +484,7 @@ class LoadImagesAndLabels(Dataset):
         except Exception:
             cache, exists = self.cache_labels(cache_path, prefix), False  # cache
 
+
         # Display cache
         nf, nm, ne, nc, n = cache.pop('results')  # found, missing, empty, corrupt, total
         if exists and LOCAL_RANK in {-1, 0}:
@@ -484,6 +498,8 @@ class LoadImagesAndLabels(Dataset):
         # Read cache
         [cache.pop(k) for k in ('hash', 'version', 'msgs')]  # remove items
         labels, shapes, self.segments = zip(*cache.values())
+
+
         self.labels = list(labels)
         self.shapes = np.array(shapes, dtype=np.float64)
         self.im_files = list(cache.keys())  # update
@@ -508,6 +524,7 @@ class LoadImagesAndLabels(Dataset):
                 self.labels[i][:, 0] = 0
                 if segment:
                     self.segments[i][:, 0] = 0
+
 
         # Rectangular Training
         if self.rect:
@@ -606,14 +623,21 @@ class LoadImagesAndLabels(Dataset):
 
         hyp = self.hyp
         mosaic = self.mosaic and random.random() < hyp['mosaic']
+
+        masks = []  # seg
+
         if mosaic:
             # Load mosaic
-            img, labels = self.load_mosaic(index)
+            # img, labels = self.load_mosaic(index)
+            img, labels, segments = self.load_mosaic(index)  # seg
             shapes = None
 
             # MixUp augmentation
             if random.random() < hyp['mixup']:
-                img, labels = mixup(img, labels, *self.load_mosaic(random.randint(0, self.n - 1)))
+                # img, labels = mixup(img, labels, *self.load_mosaic(random.randint(0, self.n - 1)))
+                
+                # seg, mixup update
+                img, labels, segments = mixup(img, labels, segments, *self.load_mosaic(random.randint(0, self.n - 1)))
 
         else:
             # Load image
@@ -623,22 +647,31 @@ class LoadImagesAndLabels(Dataset):
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
             img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
-
+            
+            # labels
             labels = self.labels[index].copy()
             if labels.size:  # normalized xywh to pixel xyxy format
                 # labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
                 labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1], has_kpt=(self.nk > 0))
 
+            # seg
+            segments = self.segments[index].copy()
+            if len(segments) > 0:
+                for i_s in range(len(segments)):
+                    segments[i_s] = xyn2xy(segments[i_s], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
+
+            # random_perspective
             if self.augment:  # TODO
-                img, labels = random_perspective(img,
-                                                 labels,
-                                                 degrees=hyp['degrees'],
-                                                 translate=hyp['translate'],
-                                                 scale=hyp['scale'],
-                                                 shear=hyp['shear'],
-                                                 perspective=hyp['perspective'],
-                                                 nk=self.nk
-                                                 ) 
+                img, labels, segments = random_perspective(img,   # seg
+                                         labels,
+                                         segments=segments,  # seg
+                                         degrees=hyp['degrees'],
+                                         translate=hyp['translate'],
+                                         scale=hyp['scale'],
+                                         shear=hyp['shear'],
+                                         perspective=hyp['perspective'],
+                                         nk=self.nk
+                                         ) 
 
         nl = len(labels)  # number of labels
         if nl:
@@ -647,6 +680,22 @@ class LoadImagesAndLabels(Dataset):
                 labels[:, 6::2] /= img.shape[0]     # normalize to 0-1
                 labels[:, 5::2] /= img.shape[1]     # normalize to 0-1
 
+            # seg
+            if len(segments) > 0:
+                if self.overlap:
+                    masks, sorted_idx = polygons2masks_overlap(img.shape[:2], segments, downsample_ratio=self.downsample_ratio)
+                    masks = masks[None]  # (640, 640) -> (1, 640, 640)
+                    labels = labels[sorted_idx]
+                else:
+                    # TODO: may cause crash
+                    masks = polygons2masks(img.shape[:2], segments, downsample_ratio=self.downsample_ratio)
+        
+
+        # create masks data
+        masks = (torch.from_numpy(masks) if len(masks) else torch.zeros(1 if self.overlap else nl, img.shape[0] //
+                                                                        self.downsample_ratio, img.shape[1] //
+                                                                        self.downsample_ratio))
+        
         if self.augment:
             # Albumentations
             img, labels = self.albumentations(img, labels)
@@ -660,6 +709,9 @@ class LoadImagesAndLabels(Dataset):
                 img = np.flipud(img)
                 if nl:
                     labels[:, 2] = 1 - labels[:, 2]
+                    
+                    masks = torch.flip(masks, dims=[1])  # seg
+
                     if self.nk > 0:   # kpt
                         labels[:, 6::2] = (1 - labels[:, 6::2]) * (labels[:, 6::2] != 0)
 
@@ -668,6 +720,9 @@ class LoadImagesAndLabels(Dataset):
                 img = np.fliplr(img)
                 if nl:
                     labels[:, 1] = 1 - labels[:, 1]
+
+                    masks = torch.flip(masks, dims=[2])  # seg
+
                     if self.nk > 0:   # kpt
                         labels[:, 5::2] = (1 - labels[:, 5::2]) * (labels[:, 5::2] != 0)
                         labels[:, 5::2] = labels[:, 5::2][:, self.kpt_lr_flip_idx]
@@ -685,7 +740,10 @@ class LoadImagesAndLabels(Dataset):
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
 
-        return torch.from_numpy(img), labels_out, self.im_files[index], shapes
+
+        # return torch.from_numpy(img), labels_out, self.im_files[index], shapes
+        return torch.from_numpy(img), labels_out, self.im_files[index], shapes, masks # seg
+
 
     def load_image(self, i):
         # Loads 1 image from dataset index 'i', returns (im, original hw, resized hw)
@@ -717,7 +775,7 @@ class LoadImagesAndLabels(Dataset):
         s = self.img_size
         yc, xc = (int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border)  # mosaic center x, y
         indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
-        random.shuffle(indices)
+        random.shuffle(indices)   # seg seems dont need this
         for i, index in enumerate(indices):
             # Load image
             img, _, (h, w) = self.load_image(index)
@@ -758,19 +816,25 @@ class LoadImagesAndLabels(Dataset):
 
         # Augment
         img4, labels4, segments4 = copy_paste(img4, labels4, segments4, p=self.hyp['copy_paste'])
-        img4, labels4 = random_perspective(img4,
-                                           labels4,
-                                           segments4,
-                                           degrees=self.hyp['degrees'],
-                                           translate=self.hyp['translate'],
-                                           scale=self.hyp['scale'],
-                                           shear=self.hyp['shear'],
-                                           perspective=self.hyp['perspective'],
-                                           border=self.mosaic_border,
-                                           nk=self.nk,
-                                           )  # border to remove
 
-        return img4, labels4
+        # seg
+        img4, labels4, segments4 = random_perspective(img4,
+                                                       labels4,
+                                                       segments4,
+                                                       degrees=self.hyp['degrees'],
+                                                       translate=self.hyp['translate'],
+                                                       scale=self.hyp['scale'],
+                                                       shear=self.hyp['shear'],
+                                                       perspective=self.hyp['perspective'],
+                                                       border=self.mosaic_border,
+                                                       nk=self.nk,
+                                                       )  # border to remove
+
+
+
+        # return img4, labels4
+        return img4, labels4, segments4  # seg
+
 
     def load_mosaic9(self, index):
         # YOLOv5 9-mosaic loader. Loads 1 image + 8 random images into a 9-image mosaic
@@ -852,10 +916,11 @@ class LoadImagesAndLabels(Dataset):
 
     @staticmethod
     def collate_fn(batch):
-        im, label, path, shapes = zip(*batch)  # transposed
+        im, label, path, shapes, masks = zip(*batch)  # transposed
         for i, lb in enumerate(label):
             lb[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(im, 0), torch.cat(label, 0), path, shapes
+        return torch.stack(im, 0), torch.cat(label, 0), path, shapes, torch.cat(masks, 0)   # seg
+
 
     @staticmethod
     def collate_fn4(batch):
@@ -987,7 +1052,9 @@ def verify_image_label(args):
                     lb = np.concatenate((classes.reshape(-1, 1), segments2boxes(segments)), 1)  # (cls, xywh)
                 lb = np.array(lb, dtype=np.float32)
             nl = len(lb)
-            if nl:
+
+
+            if nl:    # number of line
                 assert (lb >= 0).all(), f'negative label values {lb[lb < 0]}'
 
                 # has keypoints
@@ -1023,6 +1090,10 @@ def verify_image_label(args):
                     if segments:
                         segments = segments[i]
                     msg = f'{prefix}WARNING: {im_file}: {nl - len(i)} duplicate labels removed'
+
+
+
+
             else:
                 ne = 1  # label empty
                 # lb = np.zeros((0, 5), dtype=np.float32)
@@ -1031,7 +1102,11 @@ def verify_image_label(args):
             nm = 1  # label missing
             # lb = np.zeros((0, 5), dtype=np.float32)
             lb = np.zeros((0, 5 + nkpts * 2), dtype=np.float32)
+
+
         return im_file, lb, shape, segments, nm, nf, ne, nc, msg
+
+
     except Exception as e:
         nc = 1
         msg = f'{prefix}WARNING: {im_file}: ignoring corrupt image/label: {e}'

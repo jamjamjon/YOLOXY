@@ -24,9 +24,9 @@ if platform.system() != 'Windows':
     ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.experimental import attempt_load
-from models.yolo import DetectX
+from models.yolo import Detect
 from models.common import *
-from models.activations import *
+from models.activations import SiLU
 from utils.dataloaders import LoadImages
 from utils.general import (LOGGER, check_dataset, check_img_size, check_requirements, check_version, colorstr,
                            file_size, print_args, url2file, increment_path)
@@ -262,7 +262,7 @@ def run(
         # SPPF optimizer for rknn export
         if rknn:    
             # rknn 1.6 not support SiLU operator
-            if isinstance(m, Conv):  # assign export-friendly activations
+            if isinstance(m, (Conv, ESE, RepConv, AsymConv)):  # assign export-friendly activations
                 if isinstance(m.act, nn.SiLU):
                     m.act = SiLU() 
 
@@ -271,7 +271,7 @@ def run(
                 m.m = nn.Sequential(*[nn.MaxPool2d(kernel_size=3, stride=1, padding=1) for i in range(2)])
 
         # Detect layer
-        if isinstance(m, DetectX):
+        if isinstance(m, Detect):
             m.inplace = inplace
             if rknn:    # rknn mode
                 m.export_raw = True
@@ -335,7 +335,7 @@ def parse_opt():
     parser.add_argument('--cali', type=str, default='', help='do rknn qnt calibration')  
 
     opt = parser.parse_args()
-    print_args(vars(opt))
+    # print_args(vars(opt))
     return opt
 
 

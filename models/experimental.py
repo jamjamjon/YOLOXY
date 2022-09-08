@@ -1,17 +1,227 @@
 """
 Experimental modules
 """
+
 import math
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from models.common import *
-from utils.downloads import attempt_download
 
+
+
+class GSConv(nn.Module):
+    # GSConv https://github.com/AlanLi1997/slim-neck-by-gsconv
+    def __init__(self, c1, c2, k=1, s=1, g=1, act=True):
+        super().__init__()
+        c_ = c2 // 2
+        self.cv1 = Conv(c1, c_, k, s, None, g, act)
+        self.cv2 = Conv(c_, c_, 5, 1, None, c_, act)
+
+    def forward(self, x):
+        x1 = self.cv1(x)
+        x2 = torch.cat((x1, self.cv2(x1)), 1)
+        # shuffle
+        # y = x2.reshape(x2.shape[0], 2, x2.shape[1] // 2, x2.shape[2], x2.shape[3])
+        # y = y.permute(0, 2, 1, 3, 4)
+        # return y.reshape(y.shape[0], -1, y.shape[3], y.shape[4])
+
+        b, n, h, w = x2.data.size()
+        b_n = b * n // 2
+        y = x2.reshape(b_n, 2, h * w)
+        y = y.permute(1, 0, 2)
+        y = y.reshape(2, -1, n // 2, h, w)
+
+        return torch.cat((y[0], y[1]), 1)
+
+
+
+class RepBottleneck(nn.Module):
+    # -----------------------------|
+    #   Bottleneck
+    # -----------------------------|
+    # identity(bn), c -----------------| ====> 3x3, c Conv
+    # 1x1 Conv, c/2 + 3x3 Conv c, -|
+    # -----------------------------|
+
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, e=0.5, act=True, has_identity=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        from collections import OrderedDict
+
+        assert k % 2 != 0, 'Not support for uneven-k!'
+        assert g == 1, 'Not support for group conv!'
+  
+        
+        # 1x1 Conv + kxk Conv
+        c_ = int(c2 * e)  # hidden channels
+        self.pwconv_kconv = nn.Sequential(OrderedDict([
+            ('pwconv', nn.Conv2d(c1, c_, 1, 1, self._autopad(k, p), groups=g, bias=False)),
+            ('bn1', nn.BatchNorm2d(c_)),
+            ('kconv', nn.Conv2d(c_, c2, k, s, 0, groups=g, bias=False)),
+            ('bn2', nn.BatchNorm2d(c2)),
+        ]))
+
+        # identity
+        self.add = has_identity
+        if self.add:
+            self.bn = nn.BatchNorm2d(c1)
+
+        # act
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+
+        # attrs
+        self.c1, self.c2,  self.g, self.k, self.s, self.p = c1, c2, g, k, s, p
+
+    def forward(self, x):
+        if hasattr(self, 'fusedconv'):
+            y = self.fusedconv(x)
+        else:
+            y = self.pwconv_kconv(x)
+            y = y + self.bn(x) if self.add else y
+
+        return self.act(y)
+
+    def fuse(self):
+
+        # fused kxk conv2d
+        if not hasattr(self, 'fusedconv'):   
+            self.fusedconv = nn.Conv2d(self.c1, 
+                                        self.c2, 
+                                        self.k, 
+                                        self.s, 
+                                        self._autopad(self.k, self.p), 
+                                        self.g, 
+                                        bias=True).requires_grad_(False).to(self.pwconv_kconv.pwconv.weight.device)
+
+        # weights & bias transfer
+        weight, bias = self.get_equivalent_weight_bias()
+        self.fusedconv.weight.data = weight
+        self.fusedconv.bias.data = bias
+        for para in self.parameters():
+            para.detach_()
+
+        # del conv modules
+        convs = [x for x in self._modules.keys() if 'conv' in x and x != 'fusedconv' or 'bn' in x]  # keep activation and fusedconv
+        for l in convs:
+            if hasattr(self, l):
+                self.__delattr__(l)
+        # print(self._modules.keys())
+
+
+    def get_equivalent_weight_bias(self):
+
+        # (pwconv + bn) + (kconv + bn)
+        w_pwconv_, b_pwconv_ = self._fuse_conv_bn(self.pwconv_kconv.pwconv.weight, self.pwconv_kconv.bn1)   # fused pwconv
+        w_kconv_, b_kconv_ = self._fuse_conv_bn(self.pwconv_kconv.kconv.weight, self.pwconv_kconv.bn2)     # fused kconv
+        w_pwconv_kconv_bn, b_pwconv_kconv_bn = self._fuse_seq_pwconv_kconv(w_pwconv_, b_pwconv_, w_kconv_, b_kconv_)
+
+        # identity
+        if self.add:
+
+            # identity to kconv
+            w_identity_bn, b_identity_bn = self._identity_to_kconv_bn(k=3, bn=self.bn, device=self.pwconv_kconv.pwconv.weight.device)
+
+            # fuse all branch kconv -> add directly
+            return w_pwconv_kconv_bn + w_identity_bn, b_pwconv_kconv_bn + b_identity_bn
+
+        # fuse all branch kconv -> add directly
+        return w_pwconv_kconv_bn, b_pwconv_kconv_bn
+
+
+    def _autopad(self, k, p=None):  # kernel, padding
+        # Pad to 'same'
+        if p is None:
+            p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
+        return p
+
+
+    def _fuse_conv_bn(self, conv_weight=None, bn=None):
+        # fuse conv and bn
+        if conv_weight is None or bn is None:
+            return 0, 0
+        std = (bn.running_var + bn.eps).sqrt()
+        return conv_weight * (bn.weight / std).reshape((-1, 1, 1, 1)), bn.bias - bn.running_mean * bn.weight / std 
+
+
+    def _pwconv_to_kconv_padding(self, w_pwconv, k=None):
+        # pad pwconv or asym-conv to kconv 
+        if w_pwconv is None:
+            return 0
+        else:
+            if k is None:
+                k = w_pwconv.size()[-2:]    # get kernel_size(h, w)
+            p_ = self._autopad(k)
+            pad_ = [p_] * 4 if isinstance(p_, int) else [p_[0], p_[0], p_[1], p_[1]]
+            return nn.functional.pad(w_pwconv, pad_)   # pad to kxk shape
+
+
+    def _fuse_seq_pwconv_kconv(self, w_pwconv, b_pwconv, w_kconv, b_kconv):
+        # fuse pwconv + kconv
+        # x -> pwconv -> y1 -> kconv -> y2
+        # pwconv: y1 = w1 * x + b1  |  kconv: y2 = w2 * y1 + b2 
+        # y2 = (w2*w1)*x + (w2*b1+b2) 
+        w_pwconv_kconv = F.conv2d(w_kconv, w_pwconv.permute(1, 0, 2, 3))    # weights fuse
+        b_pwconv_kconv = (w_kconv * b_pwconv.reshape(1, -1, 1, 1)).sum((1, 2, 3)) + b_kconv   # bias fuse
+        return w_pwconv_kconv, b_pwconv_kconv
+
+
+    def _identity_to_kconv_bn(self, k, bn, device):
+        # turn identity branch to kconv+bn
+
+        # identity to kconv
+        input_dim = self.c1 // self.g
+        kernel = np.zeros((self.c1, input_dim, k, k), dtype=np.float32)    # empty kernel
+
+        for i in range(self.c1):
+            kernel[i, i % input_dim, 1, 1] = 1
+        w_identity = torch.from_numpy(kernel).to(device)
+
+        # fuse identity & bn
+        w_identity_bn, b_identity_bn = self._fuse_conv_bn(conv_weight=w_identity, bn=bn)
+
+        return w_identity_bn, b_identity_bn
+
+
+    def _kconv_concat(w_list, b_list):
+        # concat(kconv, kconv)
+        return torch.cat(w_list, dim=0), torch.cat(b_list)
+
+
+    def verify(self, x, verbose=True):
+        '''
+        Uasge:
+            x = torch.rand(1, 3, 640, 640).to(device)
+            repconvs = RepConvs(3, 64, 3, 2).to(device)
+            # repconvs.fuse()
+            repconvs.verify(x, verbose=True)
+        '''
+
+        for module in self.modules():
+            if isinstance(module, torch.nn.BatchNorm2d):
+                nn.init.uniform_(module.running_mean, 0, 0.1)
+                nn.init.uniform_(module.running_var, 0, 0.1)
+                nn.init.uniform_(module.weight, 0, 0.1)
+                nn.init.uniform_(module.bias, 0, 0.1)
+        self.eval()
+
+        if verbose:
+            print(f"\n{'-' * 20}\n un-fused \n{'-'*20}\n")
+            print(self)
+        y = self.forward(x)
+
+        self.fuse()
+        if verbose:
+            print(f"\n{'-' * 20}\n fused \n{'-'*20}\n")
+            print(self)
+        y_fused = self.forward(x)
+
+        print(f'>> Difference betweeen y and y_fused: {((y_fused - y) ** 2).sum()}')
 
 import torch.nn.functional as F
 from timm.models.layers import trunc_normal_, DropPath
 from timm.models.registry import register_model
+
 
 
 
@@ -26,10 +236,7 @@ class RepConvs(nn.Module):
     # 1xk Conv -------------------|
     # kx1 Conv -------------------|
     # ----------------------------|
-    # TODO:
-    # kxk Conv + 1x1 Conv 
-    # kxk Conv + kxk Conv 
-    # ----------------------------|
+
 
     def __init__(self, c1, c2, k=3, s=1, p=None, g=1, e=0.5, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super().__init__()
@@ -251,8 +458,6 @@ class RepConvs(nn.Module):
 
 
 
-
-
 # ------------------------------------------------
 #   ConvNext
 # ------------------------------------------------
@@ -367,16 +572,19 @@ class Focus(nn.Module):
     def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
         return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
 
-class FocusDown(nn.Module):
-    # invert
-    # Params      GFLOPs  GPU_mem (GB)  forward (ms) backward (ms)                 input                  output
-    # 896         0.2097         0.132         1.083         2.382        (1, 3, 640, 640)       (1, 64, 320, 320)
-    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
-        super().__init__()
-        self.conv = Conv(c1 * 4, c2, k, s, p, g, act=False)  # 1x1 Conv with no activation
 
-    def forward(self, x):  
-        return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
+class PatchConv(nn.Module):
+    def __init__(self, c1, c2, k=2, s=2, p=0, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        self.conv = Conv(c1, c2, k, s, p, g, act)  #  k = s Conv
+        self.bn = nn.BatchNorm2d(c2)
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())  # set nn.LeakyReLU()
+
+    def forward(self, x):
+        return self.act(self.bn(self.conv(x)))
+
+    def forward_fuse(self, x):
+        return self.act(self.conv(x))
 
 
 class Patchify(nn.Module):
@@ -390,7 +598,6 @@ class Patchify(nn.Module):
 
 class SPD(nn.Module):
     # Changing the dimension of the Tensor
-
     def __init__(self):
         super().__init__()
 
@@ -472,7 +679,6 @@ class C3xSA(C3):
         self.m = nn.Sequential(*(CrossConvSA(c_, c_, 3, 1, g, 1.0, shortcut, True) for _ in range(n)))
 
 
-
 class TransformerLayer(nn.Module):
     # Transformer layer https://arxiv.org/abs/2010.11929 (LayerNorm layers removed for better performance)
     def __init__(self, c, num_heads):
@@ -507,6 +713,7 @@ class TransformerBlock(nn.Module):
         b, _, w, h = x.shape
         p = x.flatten(2).permute(2, 0, 1)
         return self.tr(p + self.linear(p)).permute(1, 2, 0).reshape(b, self.c2, w, h)
+
 
 class BottleneckCSP(nn.Module):
     # CSP Bottleneck https://github.com/WongKinYiu/CrossStagePartialNetworks
@@ -671,52 +878,50 @@ class MixConv2d(nn.Module):
         return self.act(self.bn(torch.cat([m(x) for m in self.m], 1)))
 
 
-class Ensemble(nn.ModuleList):
-    # Ensemble of models
-    def __init__(self):
-        super().__init__()
 
-    def forward(self, x, augment=False, profile=False, visualize=False):
-        y = [module(x, augment, profile, visualize)[0] for module in self]
-        # y = torch.stack(y).max(0)[0]  # max ensemble
-        # y = torch.stack(y).mean(0)  # mean ensemble
-        y = torch.cat(y, 1)  # nms ensemble
-        return y, None  # inference, train output
+# ------------------------------------------------
+#   yolov7
+# ------------------------------------------------
+class MP(nn.Module):
+    def __init__(self, k=2):
+        super(MP, self).__init__()
+        self.m = nn.MaxPool2d(kernel_size=k, stride=k)
+
+    def forward(self, x):
+        return self.m(x)
 
 
-# TODO: remove Detect
-def attempt_load(weights, device=None, inplace=True, fuse=True):
-    # Loads an ensemble of models weights=[a,b,c] or a single model weights=[a] or weights=a
-    from models.yolo import Model
+class SP(nn.Module):
+    def __init__(self, k=3, s=1):
+        super(SP, self).__init__()
+        self.m = nn.MaxPool2d(kernel_size=k, stride=s, padding=k // 2)
 
-    model = Ensemble()
-    for w in weights if isinstance(weights, list) else [weights]:
-        ckpt = torch.load(attempt_download(w), map_location='cpu')  # load
-        ckpt = torch.load(w, map_location='cpu')  # load
-        ckpt = (ckpt.get('ema') or ckpt['model']).to(device).float()  # FP32 model
-        model.append(ckpt.fuse().eval() if fuse else ckpt.eval())  # fused or un-fused model in eval mode
+    def forward(self, x):
+        return self.m(x)
+    
 
-    # Compatibility updates
-    for m in model.modules():
-        t = type(m)
-        if t in (nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU, Model):
-            m.inplace = inplace  # torch 1.7.0 compatibility
-            # if t is Detect and not isinstance(m.anchor_grid, list):
-            #     delattr(m, 'anchor_grid')
-            #     setattr(m, 'anchor_grid', [torch.zeros(1)] * m.nl)
-        elif t is Conv:
-            m._non_persistent_buffers_set = set()  # torch 1.6.0 compatibility
-        elif t is nn.Upsample and not hasattr(m, 'recompute_scale_factor'):
-            m.recompute_scale_factor = None  # torch 1.11.0 compatibility
+class SPPCSPC(nn.Module):
+    # CSP https://github.com/WongKinYiu/CrossStagePartialNetworks
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, k=(5, 9, 13)):
+        super(SPPCSPC, self).__init__()
+        c_ = int(2 * c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(c_, c_, 3, 1)
+        self.cv4 = Conv(c_, c_, 1, 1)
+        self.m = nn.ModuleList([nn.MaxPool2d(kernel_size=x, stride=1, padding=x // 2) for x in k])
+        self.cv5 = Conv(4 * c_, c_, 1, 1)
+        self.cv6 = Conv(c_, c_, 3, 1)
+        self.cv7 = Conv(2 * c_, c2, 1, 1)
 
-    if len(model) == 1:
-        return model[-1]  # return model
-    print(f'Ensemble created with {weights}\n')
-    for k in 'names', 'nc', 'yaml', 'nk', 'kpt_kit':         
-        setattr(model, k, getattr(model[0], k))
-    model.stride = model[torch.argmax(torch.tensor([m.stride.max() for m in model])).int()].stride  # max stride
-    assert all(model[0].nc == m.nc for m in model), f'Models have different class counts: {[m.nc for m in model]}'
-    return model  # return ensemble
+    def forward(self, x):
+        x1 = self.cv4(self.cv3(self.cv1(x)))
+        y1 = self.cv6(self.cv5(torch.cat([x1] + [m(x1) for m in self.m], 1)))
+        y2 = self.cv2(x)
+        return self.cv7(torch.cat((y1, y2), dim=1))  
+# ------------------------------------------------
+#   yolov7
+# ------------------------------------------------
 
 
 
@@ -934,49 +1139,5 @@ class Classify(nn.Module):
         return self.flat(self.conv(z))  # flatten to x(b,c2)
 
 
-
-# ------------------------------------------------
-#   yolov7
-# ------------------------------------------------
-class MP(nn.Module):
-    def __init__(self, k=2):
-        super(MP, self).__init__()
-        self.m = nn.MaxPool2d(kernel_size=k, stride=k)
-
-    def forward(self, x):
-        return self.m(x)
-
-
-class SP(nn.Module):
-    def __init__(self, k=3, s=1):
-        super(SP, self).__init__()
-        self.m = nn.MaxPool2d(kernel_size=k, stride=s, padding=k // 2)
-
-    def forward(self, x):
-        return self.m(x)
-    
-
-class SPPCSPC(nn.Module):
-    # CSP https://github.com/WongKinYiu/CrossStagePartialNetworks
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, k=(5, 9, 13)):
-        super(SPPCSPC, self).__init__()
-        c_ = int(2 * c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, c_, 1, 1)
-        self.cv2 = Conv(c1, c_, 1, 1)
-        self.cv3 = Conv(c_, c_, 3, 1)
-        self.cv4 = Conv(c_, c_, 1, 1)
-        self.m = nn.ModuleList([nn.MaxPool2d(kernel_size=x, stride=1, padding=x // 2) for x in k])
-        self.cv5 = Conv(4 * c_, c_, 1, 1)
-        self.cv6 = Conv(c_, c_, 3, 1)
-        self.cv7 = Conv(2 * c_, c2, 1, 1)
-
-    def forward(self, x):
-        x1 = self.cv4(self.cv3(self.cv1(x)))
-        y1 = self.cv6(self.cv5(torch.cat([x1] + [m(x1) for m in self.m], 1)))
-        y2 = self.cv2(x)
-        return self.cv7(torch.cat((y1, y2), dim=1))  
-# ------------------------------------------------
-#   yolov7
-# ------------------------------------------------
 
 

@@ -56,26 +56,12 @@ class Loggers():
             'x/lr1',
             'x/lr2']  # params
 
-        # TODO for plain keys
-        # self.keys_xx = [
-        #     'train/box_loss',
-        #     'train/obj_loss',
-        #     'train/cls_loss',  
-        #     'train/other_loss',  # train loss
-        #     'metrics/precision',
-        #     'metrics/recall',
-        #     'metrics/mAP_0.5',
-        #     'metrics/mAP_0.5:0.95',  # metrics
-        #     'x/lr0',
-        #     'x/lr1',
-        #     'x/lr2']  # params
-
         # for 4 loss items keys
         self.keys_x = [
             'train/box_loss',
             'train/obj_loss',
             'train/cls_loss',  
-            'train/other_loss',  # train loss
+            'train/kpt_loss',  # train loss
             'metrics/precision',
             'metrics/recall',
             'metrics/mAP_0.5',
@@ -83,7 +69,7 @@ class Loggers():
             'val/box_loss',
             'val/obj_loss',
             'val/cls_loss',  
-            'val/others_loss',  # val loss
+            'val/kpt_loss',  # val loss
             'x/lr0',
             'x/lr1',
             'x/lr2']  # params
@@ -104,7 +90,6 @@ class Loggers():
 
         # TensorBoard
         s = self.save_dir
-        # if 'tb' in self.include and not self.opt.evolve:
         if 'tb' in self.include:
             prefix = colorstr('TensorBoard: ')
             # prefix = 'TensorBoard: '
@@ -137,12 +122,12 @@ class Loggers():
             self.wandb.log({"Labels": [wandb.Image(str(x), caption=x.name) for x in paths]})
 
 
-    def on_train_batch_start(self, ni, imgs, targets, paths, plots, nk, num_draw):
-        # Callback runs on train batch end
+    def on_train_batch_start(self, ni, imgs, targets, masks, paths, plots, nk, num_draw):
+        # Callback runs on train batch start
         if plots:
             if ni < num_draw:
                 f = self.save_dir / f'train_batch_{ni}.jpg'  # filename
-                plot_images(imgs, targets, paths, f, nk=nk)  
+                plot_images(imgs, targets, masks, paths, f, nk=nk)  
 
 
     def on_train_batch_end(self, ni, model, imgs, targets, paths, plots, nk):

@@ -1,6 +1,5 @@
 """
-YOLO-specific modules
-
+Parse Model Config & Build YOLO Model 
 Usage:
     $ python path/to/models/yolo.py --cfg xxx.yaml
 """
@@ -23,9 +22,10 @@ if platform.system() != 'Windows':
 
 from models.common import *
 from models.experimental import *
+from models.head import *
 from utils.general import check_version, check_yaml, make_divisible, print_args, LOGGER, CONSOLE
 from utils.plots import feature_visualization
-from utils.torch_utils import (fuse_conv_and_bn, initialize_weights, model_info, profile, scale_img, select_device,
+from utils.torch_utils import (initialize_weights, model_info, profile, scale_img, select_device,
                                time_sync)
 
 try:
@@ -56,7 +56,6 @@ class Model(nn.Module):
             LOGGER.info(f"{colorstr(f'Overriding model.yaml') } nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
 
-
         # num of keypoints
         if nk and nk != self.yaml.get('nk', 0):
             LOGGER.info(f"{colorstr(f'Overriding model.yaml')} nk={self.yaml.get('nk', 0)} with nk={nk}")
@@ -67,12 +66,10 @@ class Model(nn.Module):
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default det names
         self.inplace = self.yaml.get('inplace', True)
 
-        # TODO
-        # self.task = 'kpts' if nk > 0 else 'det'
 
         # Build strides, anchors
         m = self.model[-1]  # Head 
-        if isinstance(m, (DetectX)):
+        if isinstance(m, (Detect,)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
@@ -146,7 +143,7 @@ class Model(nn.Module):
         return y
 
     def _profile_one_layer(self, m, x, dt):
-        c = isinstance(m, (DetectX))  # is final layer, copy input as inplace fix
+        c = isinstance(m, (Detect, ))  # is final layer, copy input as inplace fix
         o = thop.profile(m, inputs=(x.copy() if c else x,), verbose=False)[0] / 1E9 * 2 if thop else 0  # FLOPs
         t = time_sync()
         for _ in range(10):
@@ -165,32 +162,32 @@ class Model(nn.Module):
         m = self.model[-1]  # Detect() module
         for mi, s in zip(m.m, m.stride):  # from
             
-            # decoupled head
-            if type(mi) is Decouple:
-                # obj
-                b = mi.b2.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
-                b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-                mi.b2.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-                # box
-                # cls
-                b = mi.c.bias.data
-                b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-                mi.c.bias = torch.nn.Parameter(b, requires_grad=True)
+            # # decoupled head
+            # if type(mi) is Decouple:
+            #     # obj
+            #     b = mi.b2.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
+            #     b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
+            #     mi.b2.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
+            #     # box
+            #     # cls
+            #     b = mi.c.bias.data
+            #     b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
+            #     mi.c.bias = torch.nn.Parameter(b, requires_grad=True)
                 
-            # decoupled head
-            elif type(mi) is HydraHead:
-                # obj
-                b = mi.conv_obj.conv2d.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
-                b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-                mi.conv_obj.conv2d.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-                # box
-                # cls
-                b = mi.conv_cls.conv2d.bias.data
-                b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-                mi.conv_cls.conv2d.bias = torch.nn.Parameter(b, requires_grad=True)
+            # # decoupled head
+            # elif type(mi) is HydraHead:
+            #     # obj
+            #     b = mi.conv_obj.conv2d.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
+            #     b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
+            #     mi.conv_obj.conv2d.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
+            #     # box
+            #     # cls
+            #     b = mi.conv_cls.conv2d.bias.data
+            #     b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
+            #     mi.conv_cls.conv2d.bias = torch.nn.Parameter(b, requires_grad=True)
 
             # decoupled head
-            elif type(mi) is HydraXHead:
+            if type(mi) is HydraXHead:
                 # obj
                 b = mi.conv_obj.conv2d.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
                 b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
@@ -237,6 +234,9 @@ class Model(nn.Module):
             # AsymConv
             if isinstance(m, AsymConv):
                 m.fuse_asymconv()
+            # RepConvs
+            if isinstance(m, RepConvs):
+                m.fuse()
 
 
         self.info()
@@ -257,6 +257,7 @@ class Model(nn.Module):
         return self
 
 
+# Parse model config
 def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
     # CONSOLE.log(log_locals=True)      # local variables
 
@@ -266,7 +267,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         "IDX": "right",
         "FROM": "right",
         "N": "left",
-        "PARAMS": "right",
+        "PARAMS(M)": "right",
         "MODULE": "left",
         "ARGUMENTS": "left",
     }
@@ -279,24 +280,32 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
 
     # model structure
-    if d.get('neck', None) is None:
+    if d.get('architure', None) is not None:
+        struct = d['architure']
+    elif d.get('neck', None) is None:
         struct = d['backbone'] + d['head']
     elif d.get('neck', None) is not None:
         struct = d['backbone'] + d['neck'] + d['head']
-    
+
+
     # parse
     for i, (f, n, m, args) in enumerate(struct):  # from, number, module, args
         m = eval(m) if isinstance(m, str) else m  # eval strings
+
         for j, a in enumerate(args):
             try:
+                # print(f'a: {a} | type: {type(a)}')
                 args[j] = eval(a) if isinstance(a, str) else a  # eval strings
+
+                # print(f'args: {args}')
+
             except NameError:
                 pass
 
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in (Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
                  BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x,
-                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv, FocusDown, Patchify   # update
+                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv, PatchConv, Patchify, RepConvs, GSConv   # update
                  ):
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
@@ -311,10 +320,14 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
 
-        # elif m is SPD:
-        #     c2 = 4 * ch[f]
+        elif m is SPD:
+            c2 = 4 * ch[f]
 
-        elif m in (DetectX, ):  # Detect
+        elif m in (Detect, ):  # Detect
+            args.append([ch[x] for x in f])
+
+
+        elif m in (HydraXHead, ):  # HydraXHead
             args.append([ch[x] for x in f])
             
         elif m is Contract:
@@ -325,8 +338,8 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
             c2 = ch[f]
 
         m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)  # module
-        t = str(m)[8:-2].replace('__main__.', '')  # module type
-        np = sum(x.numel() for x in m_.parameters())  # number params
+        t = str(m)[8:-2].replace('__main__.', '')  # module name
+        np = sum(x.numel() for x in m_.parameters()) / 1E6  # number params
         m_.i, m_.f, m_.type, m_.np = i, f, t, np  # attach index, 'from' index, type, number params
 
         # save model structure to table
@@ -376,6 +389,8 @@ if __name__ == '__main__':
         # fuse
         if opt.fuse:
             model.fuse()
+            # for i, l in enumerate(list(model.modules())):
+            #     print(f'{i}:::::: {l}')
 
         # print model
         if opt.detail:
@@ -387,7 +402,7 @@ if __name__ == '__main__':
 
         # profile forward-backward
         if opt.profile:  
-            results = profile(input=im, ops=[model], n=50)
+            results = profile(input=im, ops=[model], n=100)
 
         # output shape
         if opt.output:
@@ -401,6 +416,23 @@ if __name__ == '__main__':
 
     # playground
     if opt.check:
+
+        x = torch.rand(2, 32, 640, 640).to(device)
+
+        gsconv = GSConv(32, 128, 3)
+        conv = Conv(32, 128, 3)
+
+        print(gsconv, conv)
+        _ = profile(input=x, ops=[gsconv, conv], n=5, device=device)
+
+
+        # # Inception Like Conv
+        # repconvs = RepConvs(c1=3, c2=64, k=3, s=2).to(device)
+        # repconvs.verify(x, verbose=True)
+
+        # # repconvs.fuse()
+        # _ = profile(input=x, ops=[repconvs], n=5, device=device)
+
         x = torch.rand(1, 3, 640, 640).to(device)
         
         
@@ -442,26 +474,39 @@ if __name__ == '__main__':
 
 
 
+
         # p = PatchifyStem(3, 64, 3, 3)
         # print(p)
 
-        focus = Focus(3, 64, 3, 1)
-        print(focus)
+        # focus = Focus(3, 64, 3, 1)
+        # print(focus)
 
-        stem = Patchify(3, 64, 4)
-        print(stem)
+        # stem = Patchify(3, 64, 2).to(device)
+        # print(stem(x).shape)
+
+        # spd = SPD().to(device)
+        # print(spd(x).shape)
 
 
-        # spd = SPD()
+        # macs, params = thop.profile(stem.to(device), inputs=(x,), verbose=False)   # stride GFLOPs, Roughly GFLOPs = 2 * GMACs
+        # print(f'macs: {macs / 1e9}')
+        # print(f'params: {params}')
 
-        _ = profile(input=x, ops=[focus, stem], n=50, device=device)
+
+        # _ = profile(input=x, ops=[focus, stem], n=50, device=device)
 
 
         # fused RepConv
-        # repconv = RepConv(3, 64, 3, 2).to(device)
+        # repconv = RepConv(3, 64, 3, 1).to(device)
         # repconv.fuse_repconv()
 
         # y = repconv(x)
+        # print(y.shape)
+
+        # patch_conv = PatchConv(64).to(device)
+        # y = patch_conv(y)
+
+        # y = spd(y)
         # print(y.shape)
 
         # repconv2 = RepConv(3, 64, 3, 1).to(device)
