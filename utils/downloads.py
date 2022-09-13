@@ -77,7 +77,7 @@ def attempt_download(file, repo='jamjamjon/YOLOXY', release='v1.0'):
             return file
 
         # GitHub assets
-        assets = ['s.pt']
+        assets = ['N.pt']
         try:
             tag, assets = github_assets(repo, release)
         except Exception:
