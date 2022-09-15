@@ -46,14 +46,14 @@ pip install -r requirements.txt  # install
 __Object Detection__ & __Keypoints Detection__
 ```bash
 python detect.py --weights N.pt	--source 0  # webcam
-				  img.jpg  # image
-				  vid.mp4  # video
-				  ./data/images/  # image directory
-				  'path/*.jpg'  # glob
-				  'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP, RTMP, HTTP stream
+			   N-face-5.pt	 img.jpg  # image
+					 vid.mp4  # video
+					 ./data/images/  # image directory
+					 'path/*.jpg'  # glob
+					 'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP, RTMP, HTTP stream
 ```
-<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FACE.jpg" height="280"> <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" height="280">\
-<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" height="500">
+<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" height="500"> <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" height="400">\
+<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/yao.png" height="650"> 
 
 ## Multi Objects Tracking
 ```bash
