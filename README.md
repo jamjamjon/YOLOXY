@@ -101,9 +101,9 @@ parent
 ├── YOLOXY
 |    └── data
 |   	  └── datasets
-|	  	└──your-dataset.yaml  ← step 1. prepare custom dataset yaml 
+|	  	└──your-dataset.yaml  ← step 1. prepare custom dataset.yaml 
 └── datasets
-|    └── your-datasets  ←  step 2. custom dataset images and labels
+|    └── your-datasets  ←  step 2. custom dataset (images and labels)
 |   	  └── images
 |   	  └── labels
 ```
