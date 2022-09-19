@@ -68,8 +68,8 @@ Object Detection with Keypoints
 python detect.py --weights N.pt	--source rtsp://admin:admin12345@192.168.0.188/h264 --tracking
 ```
 
-
 ## Test mAP
+
 ```
 python val.py --weights N.pt --data data/datasets/coco.yaml
 ```
@@ -91,9 +91,10 @@ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.702
 
 ```
 
+	
+
 ## Train For Object Detection
 
-### Train Custom Dataset
 __Directories Structure__
 ```
 parent
@@ -102,77 +103,87 @@ parent
 |   	  └── datasets
 |	  	└──your-dataset.yaml  ← step 1. prepare custom dataset yaml 
 └── datasets
-    └── your-datasets  ←  step 2. custom dataset images and labels
+|    └── your-datasets  ←  step 2. custom dataset images and labels
+|   	  └── images
+|   	  └── labels
 ```
+	
+<details close>
+<summary>Train Custom Dataset</summary>	
+	
+**same as YOLOv5, [check this](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data)**
 
-same as YOLOv5, [check this](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data)
-
-
-<Also you can open>
-
-__1. Prepare Your Dataset.yaml__
-```
-parent
-├── YOLOXY
-└── datasets
-    └── your-datasets  ←  here 
-```
-
-
-```bash
-# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-path: ../datasets/Custom Dataset  # dataset root dir
-train: images  # train images (relative to 'path') 128 images
-val: images  # val images (relative to 'path') 128 images
-test:  # test images (optional)
-
-# Classes
-nc: 2  # number of classes
-# nk: 19   # number of keypoints (optional, 0 => bbox detection; > 0 => keypoints)
-# kpt_lr_flip_idx: [3, 2, 1, 0, 10, 9, 8, 11, 6, 5, 4, 7, 12, 14, 13, 17, 16, 15, 18]   # left-right flip for kpts, required when using ==> hyp['fliplr']
-
-names: ['face-male', "face-female"]  # class names
-
-
-
-```
-
-
-__label.txt format__
-```bash
-# class_id x_center y_center width height (normalized, 0-1)
-0 0.529861 0.436458 0.268056 0.535417   # one object
-1 0.438443 0.073789 0.173513 0.120609	# another object
-```
-</Also you can open>
 
 __Train From Stratch__
 ```bash
-python train.py --data data/projects/coco.yaml --cfg models/cfg/s.yaml --batch-size -1
+python train.py --data data/projects/your-custom-dataset.yaml --cfg models/cfg/N.yaml --batch-size -1
 ```
 __Transfer Learning__
 ```bash
-python train.py --data data/projects/coco.yaml --weights s.pt --batch-size -1
+python train.py --data data/projects/your-custom-dataset.yaml --weights N.pt --batch-size -1
 ```
+</details>
+	
+	
+	
+## Train For Keypoints Detection
+	
+<details close>
+<summary>Train Custom Dataset</summary>	
 
-## Train Object Detection With Keypoints Detection
+	
+**Make sure your keypoints label has following format**
 
-__datasets__
+	
 ```bash
-# class x_center y_center width height (normalized, 0-1)
-0 0.529861 0.436458 0.268056 0.535417   # one object
+# class_id x_center y_center width height kpt1_x kpt1_y kpt2_x kpt2_y ... kptn_x kptn_y (normalized, 0-1)
+0  0.03369140625 0.4786450662739323 0.0205078125 0.03829160530191458 0.0317119140625 0.4736480117820324 0.04082421875 0.4736480117820324 0.03767578125 0.48089396170839466 0.033203125 0.48838880706921944 0.0403271484375 0.48813843888070696   	# one object
+1  0.09765625 0.47201767304860087 0.029296875 0.05154639175257732 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0	# another object
 ```
 
-Remember to modify **`nk`** and **`kpt_lr_flip_idx`** when training for keypoints detection in [kpts_dataset.yaml](./data/projects/FADID-FACE-19.yaml). 
+	
+__step 1. Prepare Your Dataset.yaml__
 ```
-...
+parent
+├── YOLOXY
+|    └── data
+|   	  └── datasets
+|	  	└──your-dataset.yaml  ← put here
 
-# Classes
+```
+	
+**Modify **`nk`** and **`kpt_lr_flip_idx`** in your-dataset.yaml**
+
+```bash
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+path: ../datasets/coco-kpts  # dataset root dir
+train: images/train2017  # train images 
+val: images/val2017 # val images 
+
+# Classes & Keypoints
 nc: 1  # number of classes
-nk: 19   # number of keypoints (optional, 0 => bbox detection; > 0 => keypoints)
-kpt_lr_flip_idx: [3, 2, 1, 0, 10, 9, 8, 11, 6, 5, 4, 7, 12, 14, 13, 17, 16, 15, 18]   # left-right flip for kpts, required when using ==> hyp['fliplr']
+nk: 17   # number of keypoints (optional, 0 => bbox detection; > 0 => keypoints)
+kpt_lr_flip_idx: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]   # left-right flip for kpts, required when using ==> hyp['fliplr']
 
+names: ['person']
 ```
+
+	
+__step 2. Prepare Your Dataset__	
+```
+parent
+├── YOLOXY
+|    └── data
+|   	  └── datasets
+|	  	└──your-dataset.yaml  
+└── datasets
+|    └── your-datasets  ←  pute here
+|   	  └── images
+|   	  └── labels
+```
+	
+</details>	
+
 
 __Train From Stratch__
 ```bash
@@ -182,6 +193,7 @@ __Transfer Learning__
 ```bash
 python train.py --data data/projects/FADID-FACE-19.yaml --weights s.pt --batch-size -1
 ```
+	
 
 
 ## Export To Deploy
@@ -195,8 +207,9 @@ python export.py  --weights s.pt --img 640 --simplify  --include rknn --cali dat
 								    	     calibration.txt 	# text file of images path 
 ```
 
-## Acknowledgements
+## References
 * [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
 * [https://github.com/Megvii-BaseDetection/YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)
 * [https://github.com/PaddlePaddle/PaddleDetection](https://github.com/PaddlePaddle/PaddleDetection)
+* [https://github.com/TexasInstruments/edgeai-yolov5/tree/yolo-pose](https://github.com/TexasInstruments/edgeai-yolov5/tree/yolo-pose)
 
