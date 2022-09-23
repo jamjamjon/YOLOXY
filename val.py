@@ -186,14 +186,18 @@ def run(
     confusion_matrix = ConfusionMatrix(nc=nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ('%20s' + '%11s' * 6) % ('CLASS', 'IMAGES', 'LABLES', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
+    
+    s = ('%25s' + '%8s' * 2) % ('CLASS', 'IMGs', 'GTs')
+    s += ('%10s' * 4) % ('P', 'R', 'mAP.5', 'mAP:.95')
+    # s += ('%10s' * 5) % ('|', 'P', 'R', 'mAP.5', 'mAP:.95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
     # TODO: mloss setting remove loss
-    loss = torch.zeros(4, device=device)  # mean losses
+    loss = torch.zeros(5, device=device)  # mean losses
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
-    pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5')  # progress bar
+                        
+    pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5', postfix='Val')  # progress bar
     # for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
     for batch_i, (im, targets, paths, shapes, masks) in enumerate(pbar):
         callbacks.run('on_val_batch_start')
@@ -280,7 +284,7 @@ def run(
 
         # Plot images
         # TODO: callbacks.run('on_val_batch_start', ni, imgs, targets, paths, plots, nk, 10)  # plot batch images
-        if plots and batch_i < 10:
+        if plots and batch_i < 5:
             plot_images(im, targets, masks, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, nk=model.nk)  # labels
             plot_images(im, output_to_target(out), masks, paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=model.nk)  # pred
 
@@ -297,7 +301,7 @@ def run(
         nt = torch.zeros(1)
 
     # Print results
-    pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
+    pf = '%25s' + '%8i' * 2 + '%10.3g' * 4  # print format
     LOGGER.info(pf % ('ALL', seen, nt.sum(), mp, mr, map50, map))
 
     # Print results per class

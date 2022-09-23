@@ -180,7 +180,7 @@ class HydraXHead(nn.Module):
             self.conv_kpt = nn.Sequential(OrderedDict([
                 ('dwconv', DWConv(c_, c_, 3)),
                 ('conv', Conv(c_, c_, 1)),
-                ('conv2d', nn.Conv2d(c_, na * nk, 1)),
+                ('conv2d', nn.Conv2d(c_, na * nk * 3, 1)),
             ]))
 
         

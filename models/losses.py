@@ -144,6 +144,7 @@ class ComputeLoss:
         lbox_l1 = torch.zeros(1, device=self.device)
         # if self.nk > 0:
         lkpt = torch.zeros(1, device=self.device)
+        lseg = torch.zeros(1, device=self.device)
 
         # build targets
         (   pbox, pbox0, pobj, pcls, pkpt,
@@ -171,8 +172,10 @@ class ComputeLoss:
         lcls *= self.hyp['cls']    # self.hyp.get('cls', 1.0)
         lobj *= self.hyp['obj']    # self.hyp.get('obj', 1.0)
         lkpt *= self.hyp['kpt']    # self.hyp.get('kpt', 5.5)    
+        lseg *= 1
 
-        return lbox + lobj + lcls + lkpt, torch.cat((lbox, lobj, lcls, lkpt)).detach()  
+
+        return lbox + lobj + lcls + lkpt + lseg, torch.cat((lbox, lobj, lcls, lkpt, lseg)).detach()  
 
 
     # build predictions

@@ -318,7 +318,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     callbacks.run('on_train_start')     
     LOGGER.info(f"{colorstr('Train Results: ')}{save_dir}")
 
-
     # epoch ------------------------------------------------------------------
     for epoch in range(start_epoch, epochs):  
         callbacks.run('on_train_epoch_start')
@@ -336,8 +335,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             dataset.mosaic = False  # close mosaic
 
         # mloss setting
-        mloss = torch.zeros(3 + 1, device=device)  # mean losses
-        LOGGER.info(('\n' + '%10s' * (4 + mloss.shape[0])) % ('EPOCH', 'GPU_MEM', 'SIZE', 'LABELS', 'BOX', 'OBJ', 'CLS', 'KPT'))
+        LOSSES = ('BOX', 'OBJ', 'CLS', 'KPT', 'SEG')
+        mloss = torch.zeros(len(LOSSES), device=device)  # mean losses
+        LOGGER.info(('\n' + '%10s' + '%15s' + '%8s' + '%8s' + '%10s' * (mloss.shape[0])) % (('EPOCH', 'GPU_MEM(G)', 'SIZE', 'GTs') + LOSSES))
 
         # train_loader
         if RANK != -1:
@@ -345,14 +345,20 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         pbar = enumerate(train_loader)
         if RANK in {-1, 0}:
             job = 'Keypoints Detection' if nk > 0 else 'Object Detection'
-            pbar = tqdm(pbar, total=nb, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5', postfix=colorstr('white', job))  # progress bar
+            pbar = tqdm(pbar, 
+                        total=nb, 
+                        bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', 
+                        # colour='#FFF0F5', 
+                        # postfix=colorstr('white', job)
+                        postfix=job
+                        )  # progress bar
 
         # batch -------------------------------------------------------------
         optimizer.zero_grad()
         for i, (imgs, targets, paths, _, masks) in pbar:  
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
-            callbacks.run('on_train_batch_start', ni, imgs, targets, masks, paths, plots, nk, 10)  # plot batch images
+            callbacks.run('on_train_batch_start', ni, imgs, targets, masks, paths, plots, nk, 5)  # plot batch images
 
             # Warmup
             if ni <= nw:
@@ -403,8 +409,13 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # Log
             if RANK in {-1, 0}:
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-                pbar.set_description(('%10s' * 2 + '%10.4g' * (mloss.shape[0] + 2)) %
+                # mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+                gb = 1 << 30
+                mem_t = torch.cuda.get_device_properties(device).total_memory / gb if torch.cuda.is_available() else 0 # GiB total
+                mem_r = torch.cuda.memory_reserved() / gb if torch.cuda.is_available() else 0 # GiB reserved
+                mem_a = torch.cuda.memory_allocated() / gb if torch.cuda.is_available() else 0 # GiB allocated
+                mem = f'{(mem_a + mem_r):.3g}/{mem_t:.3g}'
+                pbar.set_description(('%10s' + '%15s' + '%8s' + '%8s' + '%10.4g' * (mloss.shape[0])) %
                                      (f'{epoch}/{epochs - 1}', mem, imgs.shape[-1], targets.shape[0], *mloss))
                 callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots, nk)
                 if callbacks.stop_training:
@@ -472,7 +483,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 stop = broadcast_list[0]
         if stop:
             break  # must break all DDP ranks
-
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training -----------------------------------------------------------------------------------------------------
     if RANK in {-1, 0}:
