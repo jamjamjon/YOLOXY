@@ -54,13 +54,10 @@ python detect.py --weights N.pt	--source 0  # webcam
 					 'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP
 ```
 
-Object Detection | Object Detection with Keypoints
-:-------------------------:|:-------------------------:
-<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" width="400"> | <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" width="600">
+Object Detection | Human Pose Estimation | Object Detection with Keypoints
+:-------------------------:|:-------------------------:|:-------------------------:
+<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" width="300"> |<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/kunball.png" width="400"> | <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" width="300"> |
 
-Object Detection with Keypoints
-:-------------------------:|
-<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/yao.png" width="1000"> |
 
 
 ## Multi Objects Tracking
