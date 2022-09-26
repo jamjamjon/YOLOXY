@@ -47,11 +47,11 @@ pip install -r requirements.txt  # install
 
 ## Inference / Demo 
 ```bash
-python detect.py --weights N.pt	--source 0  # webcam
-			   N-face-5.pt	 img.jpg  # image
-					 video.mp4  # video
-					 ./data/images/  # image directory
-					 'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP
+python tools/detect.py --weights N.pt	--source 0  # webcam
+			 N-face-5.pt	  img.jpg  # image
+					  video.mp4  # video
+					  ./data/images/  # image directory
+					  'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP
 ```
 
 Object Detection | Human Pose Estimation | Object Detection with Keypoints
@@ -62,13 +62,13 @@ Object Detection | Human Pose Estimation | Object Detection with Keypoints
 
 ## Multi Objects Tracking
 ```bash
-python detect.py --weights N.pt	--source rtsp://admin:admin12345@192.168.0.188/h264 --tracking
+python tools/detect.py --weights N.pt	--source rtsp://admin:admin12345@192.168.0.188/h264 --tracking
 ```
 
 ## Test mAP
 
 ```
-python val.py --weights N.pt --data data/datasets/coco.yaml
+python tools/val.py --weights N.pt --data data/datasets/coco.yaml
 ```
 ```
 Summary(N) 333 layers, 2357167 parameters, 5.2 GFLOPs, 33.8% mAP
@@ -113,11 +113,11 @@ parent
 
 __Train From Stratch__
 ```bash
-python train.py --data data/projects/your-custom-dataset.yaml --cfg models/cfg/N.yaml --batch-size -1
+python tools/train.py --data data/projects/your-custom-dataset.yaml --cfg models/cfg/N.yaml --batch-size -1
 ```
 __Transfer Learning__
 ```bash
-python train.py --data data/projects/your-custom-dataset.yaml --weights N.pt --batch-size -1
+python tools/train.py --data data/projects/your-custom-dataset.yaml --weights N.pt --batch-size -1
 ```
 </details>
 	
@@ -184,11 +184,11 @@ parent
 
 __Train From Stratch__
 ```bash
-python train.py --data data/projects/FADID-FACE-19.yaml --cfg models/cfg/s.yaml --batch-size -1
+python tools/train.py --data data/projects/FADID-FACE-19.yaml --cfg models/cfg/s.yaml --batch-size -1
 ```
 __Transfer Learning__
 ```bash
-python train.py --data data/projects/FADID-FACE-19.yaml --weights s.pt --batch-size -1
+python tools/train.py --data data/projects/FADID-FACE-19.yaml --weights s.pt --batch-size -1
 ```
 	
 
@@ -196,11 +196,11 @@ python train.py --data data/projects/FADID-FACE-19.yaml --weights s.pt --batch-s
 ## Export To Deploy
 __General ONNX__
 ```bash
-python export.py  --weights s.pt --img 640 --simplify  --include onnx
+python tools/export.py  --weights s.pt --img 640 --simplify  --include onnx
 ```
 __ONNX For RKNN__
 ```bash
-python export.py  --weights s.pt --img 640 --simplify  --include rknn --cali data/images/  # image dirdirectory
+python tools/export.py  --weights s.pt --img 640 --simplify  --include rknn --cali data/images/  # image dirdirectory
 								    	     calibration.txt 	# text file of images path 
 ```
 
