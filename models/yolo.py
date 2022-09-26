@@ -402,7 +402,7 @@ if __name__ == '__main__':
 
         # profile forward-backward
         if opt.profile:  
-            results = profile(input=im, ops=[model], n=100)
+            results = profile(input=im, ops=[model], n=30)
 
         # output shape
         if opt.output:

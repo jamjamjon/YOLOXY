@@ -140,7 +140,7 @@ class HydraXHead(nn.Module):
 
         # box head branch box => x,y,w,h
         self.conv_box = nn.Sequential(OrderedDict([
-            ('dwconv', DWConv(c_, c_, 3)),
+            ('dwconv', DWConv(c_, c_, 5)),
             ('conv', Conv(c_, c_, 1)),
             ('conv2d', nn.Conv2d(c_, na * 4, 1)),
 
@@ -162,14 +162,14 @@ class HydraXHead(nn.Module):
 
         # obj head branch
         self.conv_obj = nn.Sequential(OrderedDict([
-            ('dwconv', DWConv(c_, c_, 3)),
+            ('dwconv', DWConv(c_, c_, 5)),
             ('conv', Conv(c_, c_, 1)),
             ('conv2d', nn.Conv2d(c_, na * 1, 1)),
         ]))
 
         # cls head branch
         self.conv_cls = nn.Sequential(OrderedDict([
-            ('dwconv', DWConv(c_, c_, 3)),
+            ('dwconv', DWConv(c_, c_, 5)),
             ('conv', Conv(c_, c_, 1)),
             ('conv2d', nn.Conv2d(c_, na * nc, 1)),
         ]))
@@ -178,7 +178,7 @@ class HydraXHead(nn.Module):
         if self.nk > 0:
             # self.conv_kpt = HeadBranch(c_, na * nk * 3)      # kpt => x,y,conf
             self.conv_kpt = nn.Sequential(OrderedDict([
-                ('dwconv', DWConv(c_, c_, 3)),
+                ('dwconv', DWConv(c_, c_, 5)),
                 ('conv', Conv(c_, c_, 1)),
                 ('conv2d', nn.Conv2d(c_, na * nk * 3, 1)),
             ]))
