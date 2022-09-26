@@ -21,17 +21,19 @@
 |YOLOv5n(v6.2)      		|640 |28.0 |**1.9** |**4.5** 
 |YOLOX-n      			|416 |25.8 |**0.91** |**1.08** 
 |YOLOX-tiny      		|416 |32.8 |5.06 |6.45 
-|YOLOv6-N     			|640 |**36.3** |4.3 |**11.1** 
+|YOLOv6-N     			|640 |36.3 |4.3 |**11.1** 
+|RTMDet-tiny     		|640 |**40.9** |4.8 |**8.1** 
 |**[YOLOXY-N(ours)](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/N.pt)**      	|640 |**33.8**|2.35|5.2 
 
 ### Small size
 |Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>(G) 
 |---|---|---|---|---
-|YOLOv5s(v6.2) 				|640 |37.4 |**7.23** |**16.53**  
-|YOLOX-s 				|640 |40.5 |9.0 |26.8
-|PP-YOLOE+_s     			|640 |**43.7** |7.93 |17.36
-|YOLOv6-S     				|640 |**43.8** |17.2 |44.2
-|YOLOv7-tiny-SiLU     			|640 |38.7 |**6.2** |13.8
+|YOLOv5s(v6.2) 				|640 |37.4 |7.23 |16.53  
+|YOLOX-s 				|640 |40.5 |9.0  |26.8
+|PP-YOLOE+_s     			|640 |43.7 |7.93 |17.36
+|YOLOv6-S     				|640 |43.8 |17.2 |44.2
+|YOLOv7-tiny-SiLU     			|640 |38.7 |**6.2** |**13.8**
+|RTMDet-s     				|640 |**44.5** |8.89 |**14.8** 
 |**[YOLOXY-S(ours)](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/S.pt)**      		|640 |**42.0**|7.37|18.3
 
 
