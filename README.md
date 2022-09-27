@@ -98,13 +98,13 @@ __Directories Structure__
 ```
 parent
 ├── YOLOXY
-|    └── data
-|   	  └── datasets
-|	  	└──your-dataset.yaml  ← step 1. prepare custom dataset.yaml 
+     └── data
+    	  └── datasets
+	  	└──your-dataset.yaml  ← step 1. prepare custom dataset.yaml 
 └── datasets
-|    └── your-datasets  ←  step 2. custom dataset (images and labels)
-|   	  └── images
-|   	  └── labels
+     └── your-datasets  ←  step 2. custom dataset (images and labels)
+   	  └── images
+   	  └── labels
 ```
 	
 <details close>
@@ -145,9 +145,9 @@ __step 1. Prepare Your Dataset.yaml__
 ```
 parent
 ├── YOLOXY
-|    └── data
-|   	  └── datasets
-|	  	└──your-dataset.yaml  ← put here
+     └── data
+   	  └── datasets
+	  	└──your-dataset.yaml  ← put here
 
 ```
 	
@@ -172,13 +172,13 @@ __step 2. Prepare Your Dataset__
 ```
 parent
 ├── YOLOXY
-|    └── data
-|   	  └── datasets
-|	  	└──your-dataset.yaml  
+     └── data
+    	  └── datasets
+	  	└──your-dataset.yaml  
 └── datasets
-|    └── your-datasets  ←  pute here
-|   	  └── images
-|   	  └── labels
+      └── your-datasets  ←  put here
+   	  └── images
+   	  └── labels
 ```
 	
 </details>	
