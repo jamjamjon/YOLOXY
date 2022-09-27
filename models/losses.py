@@ -192,8 +192,11 @@ class ComputeLoss:
 
             # grid init at the 1st time
             if grid.shape[2:4] != pred.shape[2:4]:
-                yv, xv = torch.meshgrid([torch.arange(h), torch.arange(w)])
-                grid = torch.stack((xv, yv), 2).view(1, 1, h, w, 2).to(self.device)
+#                 yv, xv = torch.meshgrid([torch.arange(h), torch.arange(w)])
+#                 grid = torch.stack((xv, yv), 2).view(1, 1, h, w, 2).to(self.device)
+
+                grid = self.Detect._make_grid(w, h).to(self.device)
+
                 self.Detect.grid[k] = grid    # [1, 1, 80, 80, 2]
 
             pred = pred.reshape(bs, self.na * h * w, -1)    # （bs, 80x80, -1）
