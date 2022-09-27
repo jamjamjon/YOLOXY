@@ -77,13 +77,18 @@ class Detect(nn.Module):
                 # ----------------------------------------------------
                 # make grid
                 if self.grid[i].shape[2:4] != x[i].shape[2:4]:
-                    d = self.stride.device
-                    t = self.stride.dtype
-                    if check_version(torch.__version__, '1.10.0'):  # torch>=1.10.0 meshgrid workaround for torch>=0.7 compatibility
-                        yv, xv = torch.meshgrid(torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t), indexing='ij')
-                    else:
-                        yv, xv = torch.meshgrid(torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t))
-                    self.grid[i] = torch.stack((xv, yv), 2).view(1, self.na, ny, nx, 2).float()
+                      self.grid[i] = self._make_grid(nx, ny)
+                    
+#                     d = self.stride.device
+#                     t = self.stride.dtype
+#                     if check_version(torch.__version__, '1.10.0'):  # torch>=1.10.0 meshgrid workaround for torch>=0.7 compatibility
+#                         yv, xv = torch.meshgrid(torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t), indexing='ij')
+#                     else:
+#                         yv, xv = torch.meshgrid(torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t))
+#                     self.grid[i] = torch.stack((xv, yv), 2).view(1, self.na, ny, nx, 2).float()
+                    
+            
+                    
                 grid_x = self.grid[i][..., 0:1]   # grid x
                 grid_y = self.grid[i][..., 1:2]   # grid y
                 # ----------------------------------------------------
@@ -116,6 +121,23 @@ class Detect(nn.Module):
                 z.append(y.view(bs, -1, self.no))
 
         return x_raw if self.export_raw else x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)  # x not do sigmoid(), while z did
+
+    def _make_grid(self, nx=20, ny=20):
+        d = self.stride.device
+        t = self.stride.dtype
+        na = self.na
+
+        if check_version(torch.__version__, '1.10.0'):  # torch>=1.10.0 meshgrid workaround for torch>=0.7 compatibility
+            yv, xv = torch.meshgrid(torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t), indexing='ij')
+        else:
+            yv, xv = torch.meshgrid(torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t))
+        # grid = torch.stack((xv, yv), 2).view(1, na, ny, nx, 2).float()
+        grid = torch.stack((xv, yv), 2).expand(1, na, ny, nx, 2)
+
+        return grid
+
+
+
 
 
 
