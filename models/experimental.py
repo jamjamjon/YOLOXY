@@ -10,6 +10,96 @@ import torch.nn.functional as F
 from models.common import *
 
 
+class BranchAttn(nn.Module):
+    # head(layer) attention block
+    def __init__(self, c1):
+        super().__init__()
+        self.gap = nn.AdaptiveAvgPool2d((1, 1))     # GAP
+        self.fc = nn.Conv2d(c1, c1, 1)
+        self.sigmoid = nn.Sigmoid()
+        # self.conv = Conv(c1, c2, 1)
+    
+    def forward(self, x):
+        # return self.conv(x * self.sigmoid(self.fc(self.gap(x))))     # weighted x
+        return x + (x * self.sigmoid(self.fc(self.gap(x))))     # weighted x
+
+
+
+class HydraXHead(nn.Module):
+    # Decoupled Hydra Head
+    def __init__(self, c1, nc=80, na=1, nk=0, ns=0):  # ch_in, num_classes, num_anchors, num_keypoints
+        super().__init__()
+        self.na = na    # number of anchors
+        self.nc = nc    # number of classes
+        self.nk = nk    # number of keypoints
+        self.ns = ns    # TODO
+
+        # hidden layers
+        # c_ = min(c1, 256)  # min(c1, nc * na)
+        # c_ = min(c1, 256) * 2  # 
+        c_ = c1 // 2  # 
+        # c_ = c1 * 2  # min(c1, nc * na)
+        # c_ = max(c1, 256)  # min(c1, nc * na)
+
+        self.stem = nn.Sequential(OrderedDict([
+            ('cv1', Conv(c1, c_, 1)),  
+            ('attn', BranchAttn(c_)),    #  + 4ms
+            ('dwconv', nn.Conv2d(c_, c_, 5, 1, autopad(5, None), groups=math.gcd(c_, c_), bias=False)),
+
+        ]))
+
+        # box head branch box => x,y,w,h
+        self.conv_box = nn.Sequential(OrderedDict([
+            ('bn', nn.BatchNorm2d(c_)),
+            ('conv2d', nn.Conv2d(c_, na * 4, 1)),
+        ]))
+
+        # obj head branch
+        self.conv_obj = nn.Sequential(OrderedDict([
+            ('bn', nn.BatchNorm2d(c_)),
+            ('conv2d', nn.Conv2d(c_, na * 1, 1)),
+
+        ]))
+
+        # cls head branch
+        self.conv_cls = nn.Sequential(OrderedDict([
+            ('bn', nn.BatchNorm2d(c_)),
+            ('conv2d', nn.Conv2d(c_, na * nc, 1)),
+        ]))
+
+        # kpt head branch
+        if self.nk > 0:
+            # self.conv_kpt = HeadBranch(c_, na * nk * 3)      # kpt => x,y,conf
+            self.conv_kpt = nn.Sequential(OrderedDict([
+                # ('dwconv', DWConv(c_, c_, 5)),
+                # ('conv', Conv(c_, c_, 1)),
+                # ('conv2d', nn.Conv2d(c_, na * nk * 3, 1)),
+
+                ('bn', nn.BatchNorm2d(c_)),
+                # ('conv', Conv(c_, c1, 1)),
+                ('conv2d', nn.Conv2d(c_, na * nk * 3, 1)),
+            ]))
+
+        
+    def forward(self, x):
+        bs, nc, ny, nx = x.shape  # BCHW
+
+        x = self.stem(x)
+        x_box, x_obj, x_cls = self.conv_box(x), self.conv_obj(x), self.conv_cls(x)     # box, obj, cls
+        if self.nk > 0:
+            x_kpt = self.conv_kpt(x)     # cls
+        
+        # outputs list
+        xs = [x_obj.view(bs, self.na, 1, ny, nx), 
+              x_box.view(bs, self.na, 4, ny, nx), 
+              x_cls.view(bs, self.na, self.nc, ny, nx)]
+        if self.nk > 0:
+            xs.append(x_kpt.view(bs, self.na, self.nk * 3, ny, nx))
+
+        return torch.cat(xs, 2).view(bs, -1, ny, nx)
+
+
+
 class AsmyConvP(nn.Module):
     # Cross Convolution Downsample
     def __init__(self, c1, k=3, s=1, e=0.5, shortcut=False):
