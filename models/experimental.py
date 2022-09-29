@@ -10,6 +10,57 @@ import torch.nn.functional as F
 from models.common import *
 
 
+class AsmyConvP(nn.Module):
+    # Cross Convolution Downsample
+    def __init__(self, c1, k=3, s=1, e=0.5, shortcut=False):
+        # ch_in, ch_out, kernel, stride, groups, expansion, shortcut
+        super().__init__()
+        c_ = int(c1 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, (1, k), s)       # 1 x k Conv
+        self.cv2 = Conv(c1, c_, (k, 1), s)       # k x 1 Conv
+        self.add = shortcut 
+
+    def forward(self, x):
+        return torch.cat((self.cv1(x), self.cv2(x)), 1) if not self.add else x + torch.cat((self.cv1(x), self.cv2(x)), 1)
+
+
+class IB(nn.Module):
+    # Cross Convolution Downsample
+    def __init__(self, c1, c2, e=0.5, fused=False, shortcut=False):
+        # ch_in, ch_out, kernel, stride, groups, expansion, shortcut
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        
+        if not fused:
+            self.cv1 = nn.Sequential(OrderedDict([
+                ('conv', Conv(c1, c_, 1, 1)),
+                ('dwconv', DWConv(c_, c_, 5, 1)),  
+            ]))
+        else:
+            self.cv1 = Conv(c1, c_, 5, 1)
+
+        self.cv2 = Conv(c_, c2, 1, 1)
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
+
+
+class C3IB(nn.Module):
+    # CSP Bottleneck with 3 convolutions + ESE
+    def __init__(self, c1, c2, n=1, shortcut=True, fused=False, ese=False, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.m = nn.Sequential(*(IB(c_, c_, e, fused, shortcut) for _ in range(n)))
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(2 * c_, c2, 1)  # optional act=FReLU(c2)
+        # self.ese = ESE(c2) if ese is True else nn.Identity()
+
+    def forward(self, x):
+        # return self.cv3(self.ese(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1)))
+        return self.cv3(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1))
+
 
 class GSConv(nn.Module):
     # GSConv https://github.com/AlanLi1997/slim-neck-by-gsconv
