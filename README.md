@@ -50,7 +50,7 @@ pip install -r requirements.txt  # install
 ## Inference / Demo 
 ```bash
 python tools/detect.py --weights N.pt	--source 0  # webcam
-			 N-face-5.pt	  img.jpg  # image
+			 N-face-kpts.pt	  img.jpg  # image
 					  video.mp4  # video
 					  ./data/images/  # image directory
 					  'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP
