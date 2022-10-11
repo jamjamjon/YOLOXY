@@ -4,8 +4,8 @@
 ## Roadmap
 - [x] Object Detection
 - [x] Keypoint Detection
-- [x] Multi Objects Tracking(ByteTrack)
-- [ ] Instance Segmentation(SparseInst, YOLACT)
+- [x] Multi Objects Tracking
+- [x] Instance Segmentation(代码已完成，各个模型优化中，后续上传。近期较忙，可能会拖一段时间。)
 - [ ] Model Prune
 
 
@@ -56,10 +56,13 @@ python tools/detect.py --weights N.pt	--source 0  # webcam
 					  'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP
 ```
 
-Object Detection | Human Pose Estimation | Object Detection with Keypoints
-:-------------------------:|:-------------------------:|:-------------------------:
-<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" width="300"> |<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/kunball.png" width="400"> | <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" width="300"> |
+Object Detection | Instance Segmentation |
+:-------------------------:|:-------------------------:|
+<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" width="400"> | <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/lego.jpg" width="400"> |
 
+Object Detection with Keypoints | Human Pose Estimation | 
+:-------------------------:|:-------------------------:|
+<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" width="400"> | <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/kunball.png" width="400"> |
 
 
 ## Multi Objects Tracking
