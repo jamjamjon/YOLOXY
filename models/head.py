@@ -114,8 +114,8 @@ class Detect(nn.Module):
                     xy = (y[..., 0:2] + self.grid[i]) * self.stride[i]  # xy
                     wh = torch.exp(y[..., 2:4]) * self.stride[i]  # wh
                     if self.nk > 0:     # has kpt
-                        y[..., self.no_det::3] = (y[..., self.no_det::3] + self.grid[i].repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # xy of kpt
-                        y[..., self.no_det + 1::3] = (y[..., self.no_det + 1::3] + self.grid[i].repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # xy of kpt
+                        y[..., self.no_det::3] = (y[..., self.no_det::3] + grid_x.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # xy of kpt
+                        y[..., self.no_det + 1::3] = (y[..., self.no_det + 1::3] + grid_y.repeat((1,1,1,1, self.nk)).to(y.device)) * self.stride[i].to(y.device)  # xy of kpt
                     y = torch.cat((xy, wh, y[..., 4:]), -1)
 
                 z.append(y.view(bs, -1, self.no))
