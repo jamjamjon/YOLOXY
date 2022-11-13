@@ -8,12 +8,6 @@
 - [ ] Instance Segmentation(SparseInst)  
 - [ ] Model Prune
 
-# TODOs
-- [ ] BiFPN & head
-- [ ] compute_loss with   # cost = (cls ** 1.0 + iou ** 2.0 + 1e6 + (~is_in_boxes_and_center.float()))  
-- [ ] compute_loss with linear_sum_assignment(GPU)  
-
-
 
 ## Updates
 ==> 2022.08.29: **Nano** size model achieve **32.6% mAP** (coco2017 val) with **2.69M params** and **5.7GFLOPs**\

@@ -63,9 +63,6 @@ class Detect(nn.Module):
                 grid_x = self.grid[i][..., 0:1]   # grid x
                 grid_y = self.grid[i][..., 1:2]   # grid y
 
-                # self.grid_x = self.grid[i][..., 0:1]   # grid x
-                # self.grid_y = self.grid[i][..., 1:2]   # grid y
-
                 # decode
                 if self.nk <= 0:    # det => det(x, y, w, h, conf, cls)
                     xy, wh, conf = x[i].split((2, 2, self.nc + 1), 4)
@@ -76,8 +73,6 @@ class Detect(nn.Module):
                     xy, wh, conf, kpts_xyconf = x[i].split((2, 2, self.nc + 1, self.nk * 3), 4) 
                     xy = (xy + self.grid[i]) * self.stride[i]   # xy
                     wh = torch.exp(wh) * self.stride[i]     # wh
-                    # kpts_x = (kpts_xyconf[..., 0::3] + self.grid_x.repeat((1,1,1,1, self.nk))) * self.stride[i]  # x
-                    # kpts_y = (kpts_xyconf[..., 1::3] + self.grid_y.repeat((1,1,1,1, self.nk))) * self.stride[i]  # y
                     kpts_x = (kpts_xyconf[..., 0::3] + grid_x.repeat((1,1,1,1, self.nk))) * self.stride[i]  # x
                     kpts_y = (kpts_xyconf[..., 1::3] + grid_y.repeat((1,1,1,1, self.nk))) * self.stride[i]  # y
                     kpts_conf = kpts_xyconf[..., 2::3].sigmoid()  # conf
