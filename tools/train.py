@@ -328,7 +328,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
 
         # close mosaic in the last 5% epochs
-        if (epoch == int(epochs * 0.85)) and (epoch >= 20):  
+        if (not is_coco) and (epoch == int(epochs * 0.85)) and (epoch >= 20):  
             LOGGER.info(f"{colorstr('> Mosaic augmentation turned off.')}")
             dataset.mosaic = False  # close mosaic
 
