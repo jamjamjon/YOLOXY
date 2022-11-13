@@ -11,7 +11,7 @@ import torch
 import torch.backends.cudnn as cudnn
 
 FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # YOLOv5 root directory
+ROOT = FILE.parents[1]  # root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
@@ -20,12 +20,10 @@ from models.common import DetectMultiBackend
 from models.nms import non_max_suppression
 from utils.dataloaders import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
 from utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr, cv2,
-                           increment_path, print_args, scale_coords, strip_optimizer, xyxy2xywh)
+                           increment_path, print_args, scale_coords, scale_coords_kpts_xxyy, strip_optimizer, xyxy2xywh)
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
 
-# tracking
-from trackers.bytetrack.byte_tracker import BYTETracker
 
 @torch.no_grad()
 def run(
@@ -34,6 +32,7 @@ def run(
         data=ROOT / 'data/datasets/coco128.yaml',  # dataset.yaml path
         imgsz=(640, 640),  # inference size (height, width)
         conf_thres=0.25,  # confidence threshold
+        conf_kpts_thres=0.5,    # kpts confidence threshold
         iou_thres=0.45,  # NMS IOU threshold
         max_det=1000,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
@@ -60,7 +59,6 @@ def run(
         match_thresh=0.8,
         frame_rate=30,
         tracking=False,
-
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -87,16 +85,18 @@ def run(
         dataset = LoadStreams(source, img_size=imgsz, stride=stride, auto=pt)
         bs = len(dataset)  # batch_size
     else:
-        dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=pt)
+        dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=pt)   # TODO: video stride
         bs = 1  # batch_size
     vid_path, vid_writer = [None] * bs, [None] * bs
 
     # Tracking
     if tracking:    
-        conf_thres = 0.05 
+        from trackers.bytetrack.byte_tracker import BYTETracker
+
+        conf_thres = 0.001  # make sure has much more detections
         tracker = BYTETracker(track_thresh, track_buffer, match_thresh, frame_rate)
-        if save_txt:
-            frame_id = 0    # for save result
+        if save_txt:    # for save result
+            frame_id = 0    
 
     # Run inference
     model.warmup(imgsz=(1 if pt else bs, 3, *imgsz))  # warmup
@@ -114,10 +114,9 @@ def run(
         # Inference
         visualize = increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False
         pred = model(im, augment=augment, visualize=visualize)
-
         t3 = time_sync()
         dt[1] += t3 - t2
-
+        
         # NMS
         pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det, nk=model.nk)
         dt[2] += time_sync() - t3
@@ -142,17 +141,11 @@ def run(
             imc = im0.copy() if save_crop else im0  # for save_crop
             annotator = Annotator(im0, line_width=line_thickness, example=str(names))
             if len(det):
-                # Rescale boxes from img_size to im0 size
-                # print(f'before scale det[:, :4] =====>\n {det[:, :4]} ')
-                det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
-
-                # kpt
-                if model.nk > 0:
-                    # print(f'after scale det[:, 6:] =====>\n {det[:, 6:]} ')
-                    det[:, 6:] =  scale_coords(im.shape[2:], det[:, 6:], im0.shape, nk=model.nk, step=3)  # native-space pred
-                    # print(f'after scale det[:, 6:] =====>\n {det[:, 6:]} ')
-
-                    # exit()
+                # de-scale
+                det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()  # det
+                if model.nk > 0:    # kpt
+                    # det[:, 6:] = scale_coords(im.shape[2:], det[:, 6:], im0.shape, nk=model.nk, step=3)  # xyxy
+                    det[:, 6:] = scale_coords_kpts_xxyy(im.shape[2:], det[:, 6:], im0.shape, nk=model.nk)  # xxyy
 
                  # Tracking
                 if tracking:
@@ -163,7 +156,6 @@ def run(
                 for c in det[:, 5].unique():   # xyxy, conf, cls, kpt[optional]
                     n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
-
 
                 # Tracking
                 if tracking:
@@ -187,26 +179,27 @@ def run(
                 else:
                     # Write results
                     for idx, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
-
-                        # print(f'after nms det[:, :6] =====>\n {det[:, :6]} ')
-                        # print(f'after nms det[:, 6:] =====>\n {det[:, 6:]} ')
-
-
-                        if save_txt:  # Write to file
+                        # Write to file
+                        if save_txt:  
                             xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                             line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
                             with open(f'{txt_path}.txt', 'a') as f:
                                 f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
-
-                        if save_img or save_crop or view_img:  # Add bbox to image
+                        # Add bbox to image
+                        if save_img or save_crop or view_img:  
                             c = int(cls)  # integer class
                             label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
-                            # annotator.box_label(xyxy, label, color=colors(c, True))
-
-                            kpts = det[idx, 6:]
-                            annotator.box_label(xyxy, label, color=colors(c, True), kpts=kpts, nk=model.nk)
-
+                            kpts = det[idx, 6:]     # kpts
+                            annotator.box_label(xyxy, 
+                                                label, 
+                                                color=colors(c, True),   # box color
+                                                kpts=kpts, 
+                                                nk=model.nk, 
+                                                kpt_thresh=conf_kpts_thres, 
+                                                kpts_format='xxyy',
+                                                kpts_skeleton_pairs=None,
+                                                show_kpts_index=False)
                         if save_crop:
                             save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
 
@@ -266,7 +259,8 @@ def parse_opt():
     parser.add_argument('--source', type=str, default=ROOT / 'data/images/bus.jpg', help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--data', type=str, default=ROOT / 'data/datasets/coco128.yaml', help='(optional) dataset.yaml path')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.25, help='confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.3, help='confidence threshold')
+    parser.add_argument('--conf-kpts-thres', type=float, default=0.5, help='kpts confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -283,25 +277,20 @@ def parse_opt():
     parser.add_argument('--project', default=ROOT / 'runs/detect', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--line-thickness', default=3, type=int, help='bounding box thickness (pixels)')
+    parser.add_argument('--line-thickness', default=2, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-
-    # tracking
     parser.add_argument("--track-thresh", type=float, default=0.5, help="tracking confidence threshold")
     parser.add_argument("--track-buffer", type=int, default=30, help="the frames for keep lost tracks")
     parser.add_argument("--match-thresh", type=float, default=0.8, help="matching threshold for tracking")
     parser.add_argument('--frame-rate', type=int, default=30, help='frame rate')
     parser.add_argument('--tracking', action='store_true', help='start tracking')
 
-
-
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     # print_args(vars(opt))
-    
     return opt
 
 

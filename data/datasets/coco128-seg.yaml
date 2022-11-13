@@ -12,8 +12,7 @@ test:  # test images (optional)
 
 
 # Classes & Keypoints
-# ns: 0   # number of segmentation 
-# nk: 0   # number of keypoints (optional when do keypoints detection; 0 => bbox detection)
+nm: 32   # number of segmentation mask
 nc: 80  # number of classes
 names: ['person','bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
         'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',

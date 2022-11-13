@@ -33,7 +33,7 @@ except (ImportError, AssertionError):
 
 
 class Loggers():
-    # YOLOv5 Loggers class
+    # Loggers class
     def __init__(self, save_dir=None, weights=None, opt=None, hyp=None, logger=None, include=LOGGERS):
         self.save_dir = save_dir
         self.weights = weights
@@ -44,24 +44,9 @@ class Loggers():
         self.keys = [
             'train/box_loss',
             'train/obj_loss',
-            'train/cls_loss',  # train loss
-            'metrics/precision',
-            'metrics/recall',
-            'metrics/mAP_0.5',
-            'metrics/mAP_0.5:0.95',  # metrics
-            'val/box_loss',
-            'val/obj_loss',
-            'val/cls_loss',  # val loss
-            'x/lr0',
-            'x/lr1',
-            'x/lr2']  # params
-
-        # for 4 loss items keys
-        self.keys_x = [
-            'train/box_loss',
-            'train/obj_loss',
             'train/cls_loss',  
-            'train/kpt_loss',  # train loss
+            'train/kpt_loss',  
+            'train/seg_loss',  # train loss
             'metrics/precision',
             'metrics/recall',
             'metrics/mAP_0.5',
@@ -70,11 +55,11 @@ class Loggers():
             'val/obj_loss',
             'val/cls_loss',  
             'val/kpt_loss',  # val loss
+            'val/seg_loss',  
             'x/lr0',
             'x/lr1',
             'x/lr2']  # params
-
-
+        
         self.best_keys = ['best/epoch', 'best/precision', 'best/recall', 'best/mAP_0.5', 'best/mAP_0.5:0.95']
         for k in LOGGERS:
             setattr(self, k, None)  # init empty logger dictionary
@@ -84,7 +69,7 @@ class Loggers():
         if not wandb:
             prefix = colorstr('Weights & Biases: ')
             # prefix = '[bold gold1]Weights & Biases: [/bold gold1]'
-            s = f"{prefix}run 'pip install wandb' to automatically track and visualize YOLOX-BETA 🚀 runs (RECOMMENDED)"
+            s = f"{prefix}run 'pip install wandb' to automatically track and visualize YOLOXY-BETA  runs (RECOMMENDED)"
             self.logger.info(emojis(s))
             # self.logger.print(emojis(s))
 
@@ -130,7 +115,7 @@ class Loggers():
                 plot_images(imgs, targets, masks, paths, f, nk=nk)  
 
 
-    def on_train_batch_end(self, ni, model, imgs, targets, paths, plots, nk):
+    def on_train_batch_end(self, ni, model, imgs, targets, paths, plots):
         # Callback runs on train batch end
         if plots:
             if ni == 0:
@@ -167,8 +152,8 @@ class Loggers():
         # Callback runs at the end of each fit (train+val) epoch
 
         # TODO
-        if len(vals) == len(self.keys_x):
-            self.keys = self.keys_x
+        # if len(vals) == len(self.keys_x):
+        #     self.keys = self.keys_x
         # elif len(vals) == len(self.keys):
         #     self.keys = self.keys
 

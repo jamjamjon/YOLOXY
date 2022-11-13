@@ -11,6 +11,407 @@ from models.common import *
 
 
 
+class Extract(nn.Module):
+    # downsample spacial, upsample channel
+    def __init__(self, c1, c2, k=3, s=2, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        c_ = int(c2 * e)
+
+        self.cv1 = Conv(c1, c_, k, s)   # conv branch
+        self.mp = nn.MaxPool2d(kernel_size=2, stride=2)     # maxpool branch
+        self.cv2 = Conv(c1, c_, 1, 1)
+
+    def forward(self, x):
+        return torch.cat((self.cv1(x), self.cv2(self.mp(x))), 1)
+
+
+class SCA(nn.Module):
+    # Simplified Squeeze-Excitation
+    def __init__(self, c):
+        super().__init__()
+        self.fc = nn.Conv2d(c, c, kernel_size=1, padding=0)
+
+    def forward(self, x):
+        return x * self.fc(x.mean((2, 3), keepdim=True))
+
+
+class LiteCSP(nn.Module):
+    # Lite CSP block with channel attention
+    def __init__(self, c1, c2, n=1, shortcut=True, attn=False, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        self.c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, self.c_ * 2, 1, 1) 
+        # self.cv2 = Conv(self.c_, c_, 1)  
+        self.conv = Conv(self.c_ * 2, c2, 1)     # transition
+        self.m = nn.Sequential(*(Bottleneck(self.c_, self.c_, shortcut, g, e=1.0) for _ in range(n)))
+        self.attn = ESE(c2) if attn is True else nn.Identity() 
+
+    def forward(self, x):
+        # channel shuffle
+        # b, n, h, w = x2.data.size()
+        # b_n = b * n // 2
+        # y = x2.reshape(b_n, 2, h * w)
+        # y = y.permute(1, 0, 2)
+        # y = y.reshape(2, -1, n // 2, h, w)
+        
+        y1, y2 = self.cv1(x).split((self.c_, self.c_), 1)
+        return self.attn(self.conv(torch.cat((self.m(y1), y2), 1)))
+
+
+class S3(nn.Module):
+    # CSP with N parallel conv block, like staircases  
+    def __init__(self, c1, c2, attn=False, e=0.5):  
+        super().__init__()
+        self.c_ = int(c1 * e)  # hidden channels
+        self.cv1 = Conv(c1, self.c_ * 2, 1, 1)
+        self.cv2 = Conv(self.c_, self.c_, 1, 1)
+        self.cv3 = Conv(self.c_, self.c_, 3, 1)
+        # self.m = nn.ModuleList((Conv(self.c_, self.c_, k, 1) for _ in range(n)))
+        # self.m = nn.ModuleList((nn.Sequential(Conv(c_, c_, (1, k), (1, s)), Conv(c_, c_, (k, 1), (s, 1))) for _ in range(n)))
+        self.conv = Conv(self.c_ * (1 + 2), c2, 1, 1)
+        self.attn = ESE(c2) if attn is True else nn.Identity()
+
+    def forward(self, x):
+        x1, x2 = self.cv1(x).split((self.c_, self.c_), 1)
+        y2 = self.cv2(x2)
+        y3 = self.cv3(y2)
+        return self.attn(self.conv(torch.cat((x1, y2, y3), 1)))
+
+
+class SS3(nn.Module):
+    # Solid S3
+    def __init__(self, c1, c2, attn=False, e=0.5):  
+        super().__init__()
+        self.c_ = int(c1 * e)  # hidden channels
+        self.cv1 = Conv(c1, self.c_ * 2, 1, 1)
+        self.cv2 = Conv(self.c_, self.c_, 1, 1)
+        self.cv3 = Conv(self.c_, self.c_, 3, 1)
+        self.cv4 = Conv(self.c_, self.c_, 1, 1)
+        # self.m = nn.ModuleList((Conv(self.c_, self.c_, k, 1) for _ in range(n)))
+        # self.m = nn.ModuleList((nn.Sequential(Conv(c_, c_, (1, k), (1, s)), Conv(c_, c_, (k, 1), (s, 1))) for _ in range(n)))
+        self.conv = Conv(self.c_ * (1 + 2), c2, 1, 1)
+        self.attn = ESE(c2) if attn is True else nn.Identity()
+
+    def forward(self, x):
+        x1, x2 = self.cv1(x).split((self.c_, self.c_), 1)
+        y2 = self.cv2(x2)
+        y3 = self.cv3(y2)
+        return self.attn(self.conv(torch.cat((self.cv4(x1), y2, y3), 1)))
+
+
+
+
+class CDW(nn.Module):
+    # RTM Det block
+    # 3x3 Conv + 5x5 DWConv + 1x1 PWConv
+    def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):
+        super().__init__()
+        c_ = int(c2 * e)
+        self.conv = Conv(c1, c_, 3, 1)
+        self.dwconv = DWConv(c_, c_, 5, 1)
+        self.pwconv = Conv(c_, c2, 1, 1)
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        return x + self.pwconv(self.dwconv(self.conv(x))) if self.add else self.pwconv(self.dwconv(self.conv(x)))
+
+
+class C3CDW(nn.Module):
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(2 * c_, c2, 1)  # optional act=FReLU(c2)
+        self.m = nn.Sequential(*(CDW(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+
+    def forward(self, x):
+        return self.cv3(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1))
+ 
+
+class CPN(nn.Module):
+    # CSP with N parallel conv block, like staircases  
+    def __init__(self, c1, c2, n=2, attn=False, k=3, s=1, e=0.5):  
+        super().__init__()
+        c_ = int(c1 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, s)
+        self.cv2 = Conv(c1, c_, 1, s)
+        self.m = nn.ModuleList((Conv(c_, c_, k, s) for _ in range(n)))
+        # self.m = nn.ModuleList((nn.Sequential(Conv(c_, c_, (1, k), (1, s)), Conv(c_, c_, (k, 1), (s, 1))) for _ in range(n)))
+        self.conv = Conv(c_ * (n + 2), c2, 1, 1)
+        self.attn = ESE(c2) if attn is True else nn.Identity()
+
+    def forward(self, x):
+        y = self.cv2(x)
+        ys = [self.cv1(x), y]
+        for cv in self.m:
+            y = cv(y)
+            ys.append(y)
+        return self.attn(self.conv(torch.cat(ys, 1)))
+
+
+
+class S4(nn.Module):
+    # staircase with 4 floor
+    def __init__(self, c1, c2, attn=False, shortcut=False, k=3, s=1, e=0.5):  
+        super().__init__()
+        c_ = int(c1 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, s)
+        self.cv2 = Conv(c1, c_, 1, s)
+        self.cv3 = Conv(c_, c_, k, s)
+        self.cv4 = Conv(c_, c_, k, s)
+        # self.m = nn.ModuleList((Conv(c_, c_, k, s) for _ in range(n)))
+        self.conv = Conv(c_ * 4, c2, 1, 1)
+        self.attn = ESE(c2) if attn is True else nn.Identity()
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        x1, x2 = self.cv1(x), self.cv2(x)
+        x3 = self.cv3(x2)
+        x4 = self.cv4(x3)
+        y = self.attn(self.conv(torch.cat((x1, x2, x3, x4), 1)))
+
+        return x + y if self.add else y
+
+
+class S5(nn.Module):
+    # staircase with 4 floor
+    def __init__(self, c1, c2, attn=False, shortcut=False, k=3, s=1, e=0.5):  
+        super().__init__()
+        c_ = int(c1 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, s)
+        self.cv2 = Conv(c1, c_, 1, s)
+        self.cv3 = Conv(c_, c_, k, s)
+        self.cv4 = Conv(c_, c_, k, s)
+        self.cv5 = Conv(c_, c_, k, s)
+        # self.m = nn.ModuleList((Conv(c_, c_, k, s) for _ in range(n)))
+        self.conv = Conv(c_ * 5, c2, 1, 1)
+        self.attn = ESE(c2) if attn is True else nn.Identity()
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        x1, x2 = self.cv1(x), self.cv2(x)
+        x3 = self.cv3(x2)
+        x4 = self.cv4(x3)
+        x5 = self.cv5(x4)
+        y = self.attn(self.conv(torch.cat((x1, x2, x3, x4, x5), 1)))
+
+        return x + y if self.add else y
+
+
+
+class CrossConvP(nn.Module):
+    # Cross Convolution Downsample
+    def __init__(self, c1, c2, k=3, s=1, g=1, e=1.0, shortcut=False):
+        # ch_in, ch_out, kernel, stride, groups, expansion, shortcut
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, (1, k), (1, s))
+        self.cv2 = Conv(c_, c2, (k, 1), (s, 1), g=g)
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        return x + self.cv1(self.cv2(x)) if self.add else self.cv1(self.cv2(x))
+
+
+
+class ExtractBlock(nn.Module):
+    # downsample spacial, upsample channel
+    # DSUC UCDS
+    def __init__(self, c1, c2, by='conv', k=3, s=2, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        self.by = by
+
+        if (self.by) == 'conv':   # most fast
+            self.conv = Conv(c1, c2, 3, 2)
+        elif (self.by) == 'mp':
+            self.mp = nn.MaxPool2d(kernel_size=2, stride=2)
+            self.conv = Conv(c1, c2, 1, 1)
+        elif (self.by) == 'default':  # slower
+            c_ = int(c2 * 0.5)
+
+            # conv branch
+            # self.cv2 = Conv(c_, c_, 1, 1) 
+            self.cv1 = Conv(c1, c_, 3, 2)
+
+            # mp branch
+            self.mp = nn.MaxPool2d(kernel_size=2, stride=2)
+            self.cv3 = Conv(c1, c_, 1, 1)
+
+        elif (self.by) == 'dwpw':
+            c_ = int(c2 * 0.5)
+
+            self.cv1 = Conv(c1, c_, 3, 2)
+
+            self.dwconv = DWConv(c1, c1, 3, 2)
+            self.pwconv = Conv(c1, c_, 1)
+
+
+
+    def forward(self, x):
+        if (self.by) == 'conv':
+            return self.conv(x)
+        elif (self.by) == 'mp':
+            return self.conv(self.mp(x))
+        elif (self.by) == 'default':
+
+
+            # y1 = self.cv2(self.cv1(x))
+            y1 = self.cv1(x)
+            y2 = self.cv3(self.mp(x))
+
+            return torch.cat((y1, y2), 1)
+
+        elif (self.by) == 'dwpw':
+
+            y1 = self.cv1(x)
+            y2 = self.pwconv(self.dwconv(x))
+
+            return torch.cat((y1, y2), 1)
+
+
+
+class BranchAttn(nn.Module):
+    # head(layer) attention block
+    def __init__(self, c1):
+        super().__init__()
+        self.gap = nn.AdaptiveAvgPool2d((1, 1))     # GAP
+        self.fc = nn.Conv2d(c1, c1, 1)
+        self.sigmoid = nn.Sigmoid()
+        # self.conv = Conv(c1, c2, 1)
+    
+    def forward(self, x):
+        # return self.conv(x * self.sigmoid(self.fc(self.gap(x))))     # weighted x
+        return x + (x * self.sigmoid(self.fc(self.gap(x))))     # weighted x
+
+
+
+class HydraXHead(nn.Module):
+    # Decoupled Hydra Head
+    def __init__(self, c1, nc=80, na=1, nk=0, ns=0):  # ch_in, num_classes, num_anchors, num_keypoints
+        super().__init__()
+        self.na = na    # number of anchors
+        self.nc = nc    # number of classes
+        self.nk = nk    # number of keypoints
+        self.ns = ns    # TODO
+
+        # hidden layers
+        # c_ = min(c1, 256)  # min(c1, nc * na)
+        # c_ = min(c1, 256) * 2  # 
+        c_ = c1 // 2  # 
+        # c_ = c1 * 2  # min(c1, nc * na)
+        # c_ = max(c1, 256)  # min(c1, nc * na)
+
+        self.stem = nn.Sequential(OrderedDict([
+            ('cv1', Conv(c1, c_, 1)),  
+            ('attn', BranchAttn(c_)),    #  + 4ms
+            ('dwconv', nn.Conv2d(c_, c_, 5, 1, autopad(5, None), groups=math.gcd(c_, c_), bias=False)),
+
+        ]))
+
+        # box head branch box => x,y,w,h
+        self.conv_box = nn.Sequential(OrderedDict([
+            ('bn', nn.BatchNorm2d(c_)),
+            ('conv2d', nn.Conv2d(c_, na * 4, 1)),
+        ]))
+
+        # obj head branch
+        self.conv_obj = nn.Sequential(OrderedDict([
+            ('bn', nn.BatchNorm2d(c_)),
+            ('conv2d', nn.Conv2d(c_, na * 1, 1)),
+
+        ]))
+
+        # cls head branch
+        self.conv_cls = nn.Sequential(OrderedDict([
+            ('bn', nn.BatchNorm2d(c_)),
+            ('conv2d', nn.Conv2d(c_, na * nc, 1)),
+        ]))
+
+        # kpt head branch
+        if self.nk > 0:
+            # self.conv_kpt = HeadBranch(c_, na * nk * 3)      # kpt => x,y,conf
+            self.conv_kpt = nn.Sequential(OrderedDict([
+                # ('dwconv', DWConv(c_, c_, 5)),
+                # ('conv', Conv(c_, c_, 1)),
+                # ('conv2d', nn.Conv2d(c_, na * nk * 3, 1)),
+
+                ('bn', nn.BatchNorm2d(c_)),
+                # ('conv', Conv(c_, c1, 1)),
+                ('conv2d', nn.Conv2d(c_, na * nk * 3, 1)),
+            ]))
+
+        
+    def forward(self, x):
+        bs, nc, ny, nx = x.shape  # BCHW
+
+        x = self.stem(x)
+        x_box, x_obj, x_cls = self.conv_box(x), self.conv_obj(x), self.conv_cls(x)     # box, obj, cls
+        if self.nk > 0:
+            x_kpt = self.conv_kpt(x)     # cls
+        
+        # outputs list
+        xs = [x_obj.view(bs, self.na, 1, ny, nx), 
+              x_box.view(bs, self.na, 4, ny, nx), 
+              x_cls.view(bs, self.na, self.nc, ny, nx)]
+        if self.nk > 0:
+            xs.append(x_kpt.view(bs, self.na, self.nk * 3, ny, nx))
+
+        return torch.cat(xs, 2).view(bs, -1, ny, nx)
+
+
+
+class AsmyConvP(nn.Module):
+    # Cross Convolution Downsample
+    def __init__(self, c1, k=3, s=1, e=0.5, shortcut=False):
+        # ch_in, ch_out, kernel, stride, groups, expansion, shortcut
+        super().__init__()
+        c_ = int(c1 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, (1, k), s)       # 1 x k Conv
+        self.cv2 = Conv(c1, c_, (k, 1), s)       # k x 1 Conv
+        self.add = shortcut 
+
+    def forward(self, x):
+        return torch.cat((self.cv1(x), self.cv2(x)), 1) if not self.add else x + torch.cat((self.cv1(x), self.cv2(x)), 1)
+
+
+class IB(nn.Module):
+    def __init__(self, c1, c2, e=0.5, fused=False, shortcut=False):
+        # ch_in, ch_out, kernel, stride, groups, expansion, shortcut
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        
+        if not fused:
+            self.cv1 = nn.Sequential(OrderedDict([
+                ('conv', Conv(c1, c_, 1, 1)),
+                ('dwconv', DWConv(c_, c_, 5, 1)),  
+            ]))
+        else:
+            self.cv1 = Conv(c1, c_, 5, 1)
+
+        self.cv2 = Conv(c_, c2, 1, 1)
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
+
+
+class C3IB(nn.Module):
+    # CSP Bottleneck with 3 convolutions + ESE
+    def __init__(self, c1, c2, n=1, shortcut=True, fused=False, ese=False, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.m = nn.Sequential(*(IB(c_, c_, e, fused, shortcut) for _ in range(n)))
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(2 * c_, c2, 1)  # optional act=FReLU(c2)
+        # self.ese = ESE(c2) if ese is True else nn.Identity()
+
+    def forward(self, x):
+        # return self.cv3(self.ese(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1)))
+        return self.cv3(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1))
+
+
 class GSConv(nn.Module):
     # GSConv https://github.com/AlanLi1997/slim-neck-by-gsconv
     def __init__(self, c1, c2, k=1, s=1, g=1, act=True):
@@ -35,6 +436,162 @@ class GSConv(nn.Module):
 
         return torch.cat((y[0], y[1]), 1)
 
+
+class RepConv(nn.Module):
+    # rep convolution block
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+
+        assert k == 3, "RepConv Block always with 3x3 Conv"
+
+        self.conv3x3 = CB(c1, c2, k=k, s=s, p=p, g=g)
+        self.conv1x1 = CB(c1, c2, k=1, s=s, p=0, g=g)
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+        # self.act = nn.ReLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+        # self.focus = SPD() if focus is True else nn.Identity()
+
+
+    def forward(self, x):
+        if hasattr(self, 'fusedconv'):
+            y = self.fusedconv(x)
+        else:
+            y = self.conv1x1(x) + self.conv3x3(x)
+        return self.act(y)
+        # return self.focus(self.act(y))
+
+    def fuse_repconv(self):
+        if not hasattr(self, 'fusedconv'):   
+            self.fusedconv = nn.Conv2d(self.conv3x3.conv.in_channels, 
+                                        self.conv3x3.conv.out_channels, 
+                                        self.conv3x3.conv.kernel_size, 
+                                        self.conv3x3.conv.stride, 
+                                        self.conv3x3.conv.padding, 
+                                        self.conv3x3.conv.groups, 
+                                        bias=True)
+
+        kernel, bias = self.get_equivalent_kernel_bias()
+        self.fusedconv.weight.data = kernel
+        self.fusedconv.bias.data = bias
+        for para in self.parameters():
+            para.detach_()
+        if hasattr(self, 'conv3x3'):
+            self.__delattr__('conv3x3')
+        if hasattr(self, 'conv1x1'):
+            self.__delattr__('conv1x1')
+
+    def get_equivalent_kernel_bias(self):
+        kernel3x3, bias3x3 = self._fuse_bn_tensor(self.conv3x3)
+        kernel1x1, bias1x1 = self._fuse_bn_tensor(self.conv1x1)
+        return kernel3x3 + self._pad_1x1_to_3x3_tensor(kernel1x1), bias3x3 + bias1x1
+
+    def _pad_1x1_to_3x3_tensor(self, kernel1x1):
+        if kernel1x1 is None:
+            return 0
+        else:
+            return nn.functional.pad(kernel1x1, [1, 1, 1, 1])
+
+    def _fuse_bn_tensor(self, branch):
+        if branch is None:
+            return 0, 0
+        kernel = branch.conv.weight
+        running_mean = branch.bn.running_mean
+        running_var = branch.bn.running_var
+        gamma = branch.bn.weight
+        beta = branch.bn.bias
+        eps = branch.bn.eps
+        std = (running_var + eps).sqrt()
+        t = (gamma / std).reshape((-1, 1, 1, 1))
+        return kernel * t, beta - running_mean * gamma / std 
+
+
+class AsymConv(nn.Module):
+    # Asymmetric Conv
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, act=True):
+        super().__init__()
+
+        self.convkxk = CB(c1, c2, k, s)            # k x k Conv 
+        self.conv1xk = CB(c1, c2, (1, k), s)       # 1 x k Conv
+        self.convkx1 = CB(c1, c2, (k, 1), s)       # k x 1 Conv
+        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+        # self.act = nn.ReLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+        # self.focus = SPD() if focus is True else nn.Identity()
+
+
+    def forward(self, x):
+        if hasattr(self, 'fusedconv'):
+            y = self.fusedconv(x)
+        else:
+            
+            y_kxk = self.convkxk(x)
+            y_kx1 = self.convkx1(x)
+            y_1xk = self.conv1xk(x)
+            y = y_kxk + y_kx1 + y_1xk
+
+        return self.act(y)
+        # return self.focus(self.act(y))
+
+
+    def fuse_asymconv(self):
+        if not hasattr(self, 'fusedconv'):   
+            self.fusedconv = nn.Conv2d(self.convkxk.conv.in_channels, 
+                                        self.convkxk.conv.out_channels, 
+                                        self.convkxk.conv.kernel_size, 
+                                        self.convkxk.conv.stride, 
+                                        self.convkxk.conv.padding, 
+                                        self.convkxk.conv.groups, 
+                                        bias=True
+                                        )
+
+        kernel, bias = self.get_equivalent_kernel_bias()
+        self.fusedconv.weight.data = kernel
+        self.fusedconv.bias.data = bias     
+        for para in self.parameters():
+            para.detach_()
+        if hasattr(self, 'convkxk'):
+            self.__delattr__('convkxk')
+        if hasattr(self, 'convkx1'):
+            self.__delattr__('convkx1')
+        if hasattr(self, 'conv1xk'):
+            self.__delattr__('conv1xk')
+
+
+    def get_equivalent_kernel_bias(self):
+        # fuse conv * bn
+        kernelkxk, biaskxk = self._fuse_bn_tensor(self.convkxk)
+        kernel1xk, bias1xk = self._fuse_bn_tensor(self.conv1xk)
+        kernelkx1, biaskx1 = self._fuse_bn_tensor(self.convkx1)
+        
+        # fuse branch
+        self._add_to_square_kernel(kernelkxk, kernel1xk)
+        self._add_to_square_kernel(kernelkxk, kernelkx1)
+
+        return kernelkxk, biaskxk + bias1xk + biaskx1
+    
+    # fuse conv & bn
+    def _fuse_bn_tensor(self, branch):
+        if branch is None:
+            return 0, 0
+        kernel = branch.conv.weight
+        running_mean = branch.bn.running_mean
+        running_var = branch.bn.running_var
+        gamma = branch.bn.weight
+        beta = branch.bn.bias
+        eps = branch.bn.eps
+        std = (running_var + eps).sqrt()
+        t = (gamma / std).reshape((-1, 1, 1, 1))
+        return kernel * t, beta - running_mean * gamma / std 
+    
+    # fuse sym-kernel & asym-kernel
+    def _add_to_square_kernel(self, square_kernel, asym_kernel):
+        asym_h = asym_kernel.size(2)
+        asym_w = asym_kernel.size(3)
+        square_h = square_kernel.size(2)
+        square_w = square_kernel.size(3)
+        square_kernel[:, 
+                      :, 
+                      square_h // 2 - asym_h // 2: square_h // 2 - asym_h // 2 + asym_h,
+                      square_w // 2 - asym_w // 2: square_w // 2 - asym_w // 2 + asym_w
+                     ] += asym_kernel
 
 
 class RepBottleneck(nn.Module):
@@ -217,10 +774,6 @@ class RepBottleneck(nn.Module):
         y_fused = self.forward(x)
 
         print(f'>> Difference betweeen y and y_fused: {((y_fused - y) ** 2).sum()}')
-
-import torch.nn.functional as F
-from timm.models.layers import trunc_normal_, DropPath
-from timm.models.registry import register_model
 
 
 
@@ -500,6 +1053,9 @@ class PatchDown(nn.Module):
 
 
 class ConvNextBlock(nn.Module):
+    from timm.models.layers import trunc_normal_, DropPath
+    from timm.models.registry import register_model
+
     """ ConvNeXt Block. There are two equivalent implementations:
     (1) DwConv -> LayerNorm (channels_first) -> 1x1 Conv -> GELU -> 1x1 Conv; all in (N, C, H, W)
     (2) DwConv -> Permute to (N, H, W, C); LayerNorm (channels_last) -> Linear -> GELU -> Linear; Permute back
@@ -951,8 +1507,8 @@ class AutoShape(nn.Module):
             m = self.model.model.model[-1] if self.dmb else self.model.model[-1]  # Detect()
             m.stride = fn(m.stride)
             m.grid = list(map(fn, m.grid))
-            if isinstance(m.anchor_grid, list):
-                m.anchor_grid = list(map(fn, m.anchor_grid))
+            # if isinstance(m.anchor_grid, list):
+            #     m.anchor_grid = list(map(fn, m.anchor_grid))
         return self
 
     @torch.no_grad()

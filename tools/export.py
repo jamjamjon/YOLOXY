@@ -17,7 +17,7 @@ import yaml
 from torch.utils.mobile_optimizer import optimize_for_mobile
 
 FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # YOLOv5 root directory
+ROOT = FILE.parents[1]  # root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 if platform.system() != 'Windows':
@@ -34,7 +34,7 @@ from utils.torch_utils import select_device
 
 
 def export_formats():
-    # YOLOv5 export formats
+    # export formats
     x = [
             ['PyTorch', '-', '.pt', True],
             ['ONNX', 'onnx', '.onnx', True],
@@ -48,7 +48,7 @@ def export_formats():
 
 
 def export_onnx(model, im, file, opset, train, dynamic, simplify, save_dir, prefix=colorstr('ONNX:')):
-    # YOLOv5 ONNX export
+    #  ONNX export
     try:
         check_requirements(('onnx',))
         import onnx
@@ -82,7 +82,7 @@ def export_onnx(model, im, file, opset, train, dynamic, simplify, save_dir, pref
         onnx.checker.check_model(model_onnx)  # check onnx model
 
         # Metadata
-        d = {'stride': int(max(model.stride)), 'names': model.names}
+        d = {'stride': int(max(model.stride)), 'names': model.names, 'nk': model.nk}
         for k, v in d.items():
             meta = model_onnx.metadata_props.add()
             meta.key, meta.value = k, str(v)
@@ -331,7 +331,7 @@ def parse_opt():
     parser.add_argument('--dynamic', action='store_true', help='ONNX/TF: dynamic axes')
     parser.add_argument('--simplify', action='store_true', help='ONNX: simplify model')
     parser.add_argument('--opset', type=int, default=11, help='ONNX: opset version')
-    parser.add_argument('--include', nargs='+', default=[''], help='onnx, rknn')
+    parser.add_argument('--include', nargs='+', default=['onnx'], help='onnx, rknn')
     parser.add_argument('--cali', type=str, default='', help='do rknn qnt calibration')  
 
     opt = parser.parse_args()
