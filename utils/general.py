@@ -13,7 +13,6 @@ from rich.table import Table
 from rich.panel import Panel
 from skimage import measure
 
-
 import math
 import os
 import platform
@@ -44,7 +43,7 @@ import torch.nn.functional as F
 from utils.metrics import box_iou, fitness
 
 FILE = Path(__file__).resolve()
-ROOT = FILE.parents[1]  # YOLOv5 root directory
+ROOT = FILE.parents[1]  # root directory
 RANK = int(os.getenv('RANK', -1))
 
 # Settings

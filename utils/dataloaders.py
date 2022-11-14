@@ -1072,10 +1072,6 @@ def verify_image_label(args):
                         for i in range(nl):
                             kpt_ = np.delete(lb[i, 5:], np.arange(2, lb.shape[1] - 5, 3))
                             kpts_[i] = np.hstack((lb[i, :5], kpt_))
-
-                        # TODO: if visiblity value is 1 (labeled but invisiable), make x=0, y=0
-
-                        
                         lb = kpts_
 
                     # check again to make sure kpt => (x_i, y_i)
@@ -1092,9 +1088,6 @@ def verify_image_label(args):
                     if segments:
                         segments = segments[i]
                     msg = f'{prefix}WARNING: {im_file}: {nl - len(i)} duplicate labels removed'
-
-
-
 
             else:
                 ne = 1  # label empty
@@ -1267,7 +1260,6 @@ def create_dataloader_seg(path,
                           shuffle=False,
                           mask_downsample_ratio=1,
                           overlap_mask=False):
-    print(f'----> using seg dataloader!!\n')
 
     if rect and shuffle:
         LOGGER.warning('WARNING ⚠️ --rect is incompatible with DataLoader shuffle, setting shuffle=False')

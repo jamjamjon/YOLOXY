@@ -289,7 +289,6 @@ class ComputeLoss:
  
                 if self.nk > 0:
                     p_kpts = pkpt[idx]          # pred kpts
-
                     imgsz_kpt = torch.Tensor([[input_w, input_h] * self.nk]).type_as(targets)  # de-scale to origin image size [[640, 640, 640, 640]]
                     t_kpts = targets[idx, :nt, -2 * self.nk:].mul_(imgsz_kpt)  # t_kpts
                 else:
@@ -447,7 +446,7 @@ class ComputeLoss:
         is_in_boxes_all = is_in_boxes.sum(dim=0) > 0
 
         # in fixed region
-        # TODO: x percentage of width or height, rather than fixed value: 2.5 
+        # TODO: x% of width or height, rather than fixed value: 2.5 
         center_radius = 2.5   # strides=[8, 16, 32] ; 2.5 * strides=[20, 40, 80] = grid_size! that's why 2.5 is better
         t_bboxes_tl = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) - center_radius * grids_stride.unsqueeze(0)
         t_bboxes_br = (t_bboxes[:, 0:2]).unsqueeze(1).repeat(1, self.ng, 1) + center_radius * grids_stride.unsqueeze(0)

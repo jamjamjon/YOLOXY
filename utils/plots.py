@@ -424,14 +424,13 @@ def output_to_target(output, kpts_format='xycxyc', nk=0):
             k[:, 0::3], k[:, 1::3], k[:, 2::3] = kpts[:, : nk], kpts[:, nk: 2*nk], kpts[:, 2*nk: 3*nk]
             kpts = k
 
-
         o = o[:,:6]
         for index, (*box, conf, cls) in enumerate(o.cpu().numpy()):
             targets.append([i, cls, *list(*xyxy2xywh(np.array(box)[None])), conf, *list(kpts.cpu().numpy()[index])])
     return np.array(targets)
 
 
-# @threaded
+@threaded
 def plot_images(images, targets, masks, paths=None, fname='images.jpg', names=None, 
                 max_size=1920, max_subplots=25, nk=0):
 

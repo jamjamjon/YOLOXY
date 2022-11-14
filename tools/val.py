@@ -185,7 +185,7 @@ def run(
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
     
     s = ('%33s' + '%8s' * 2) % ('CLASS', 'IMGs', 'GTs')
-    s += ('%10s' * 4) % ('P', 'R', 'mAP:.5', 'mAP:.95')
+    s += ('%10s' * 4) % ('P', 'R', 'mAP:.5', 'mAP:.5-95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
     # TODO: mloss setting remove loss

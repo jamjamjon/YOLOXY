@@ -54,11 +54,12 @@ class Loggers():
             'val/box_loss',
             'val/obj_loss',
             'val/cls_loss',  
-            'val/kpt_loss',  # val loss
-            'val/seg_loss',  
+            'val/kpt_loss',  
+            'val/seg_loss',   # val loss
             'x/lr0',
             'x/lr1',
-            'x/lr2']  # params
+            'x/lr2'
+        ]  # params
         
         self.best_keys = ['best/epoch', 'best/precision', 'best/recall', 'best/mAP_0.5', 'best/mAP_0.5:0.95']
         for k in LOGGERS:
