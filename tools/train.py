@@ -354,7 +354,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
             # batch start callbacks
             callbacks.run('on_train_batch_start', ni, imgs, targets, masks, paths, plots, nk, 10)  
-            # print(f'targets: {targets.shape}')   # 6 + no_kpt(idx, cls, xywh, kpts(optional)) 
 
             # Warmup
             if ni <= nw:

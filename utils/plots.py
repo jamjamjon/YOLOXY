@@ -96,7 +96,14 @@ class Annotator:
                   kpts_format='xyxy',
                   kpts_skeleton_pairs=None,
                   show_kpts_index=False,
+                  is_coco=False,    
                   ):
+
+        # 17 keypoints skeleton 
+        if is_coco:
+            kpts_skeleton_pairs = [[15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11],
+                            [6, 12], [5, 6], [5, 7], [6, 8], [7, 9], [8, 10], [1, 2],
+                            [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6]]
 
         # Add one xyxy box to image with label
         if self.pil or not is_ascii(label):
@@ -142,13 +149,6 @@ class Annotator:
 
                 # draw skeleton
                 if kpts_skeleton_pairs is not None:
-
-                    # if nk == 17:
-                    #     kpts_skeleton_pairs = [[16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12],
-                    #                     [7, 13], [6, 7], [6, 8], [7, 9], [8, 10], [9, 11], [2, 3],
-                    #                     [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]]
-                    # else:
-                    #     kpts_skeleton_pairs = []
 
                     assert np.array(kpts_skeleton_pairs).max() <= nk, "Max kpts index != nk!"
 
@@ -208,18 +208,9 @@ class Annotator:
             # draw keypoints
             if kpts is not None and nk > 0:
 
-                # if nk == 17:
-                #     skeleton_pair = [[16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12],
-                #                     [7, 13], [6, 7], [6, 8], [7, 9], [8, 10], [9, 11], [2, 3],
-                #                     [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]]
-                # else:
-                #     skeleton_pair = []
-
-
                 # draw circle
                 step = len(kpts) // nk
                 w_, h_ = self.im.shape[0], self.im.shape[1]  # 
-
 
                 # iter kpts
                 for idx in range(nk):
@@ -243,7 +234,7 @@ class Annotator:
                     if not (x % w_ == 0 or y % h_ == 0):
                         if conf is not None and conf <= kpt_thresh:   # filter kpt which conf < 0.5
                             continue
-                        r_ = max(3, self.lw)  # radius
+                        r_ = max(4, self.lw)  # radius
                         # cv2.circle(self.im, (int(x), int(y)), int(r_), kpt_color, -1)
                         cv2.circle(self.im, (int(x), int(y)), int(r_), (0, 215, 255), -1)  # gold
 
@@ -330,13 +321,6 @@ class Annotator:
             masks = (masks @ colors).clip(0, 255)  # (h,w,n) @ (n,3) = (h,w,3)
             self.im[:] = masks * alpha + self.im * (1 - s * alpha)
         else:
-
-            # print(f'masks --- > {masks.shape}')
-            # print(f'masks --- > {masks.max()}')
-
-            # cv2.imshow('done draw', masks)
-            # cv2.waitKey(0)
-
 
             if len(masks) == 0:
                 self.im[:] = im_gpu.permute(1, 2, 0).contiguous().cpu().numpy() * 255
