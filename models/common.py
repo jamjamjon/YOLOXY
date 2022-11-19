@@ -61,162 +61,6 @@ class CB(nn.Module):
         return self.bn(self.conv(x))
 
 
-class RepConv(nn.Module):
-    # rep convolution block
-    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
-        super().__init__()
-
-        assert k == 3, "RepConv Block always with 3x3 Conv"
-
-        self.conv3x3 = CB(c1, c2, k=k, s=s, p=p, g=g)
-        self.conv1x1 = CB(c1, c2, k=1, s=s, p=0, g=g)
-        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
-        # self.act = nn.ReLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
-        # self.focus = SPD() if focus is True else nn.Identity()
-
-
-    def forward(self, x):
-        if hasattr(self, 'fusedconv'):
-            y = self.fusedconv(x)
-        else:
-            y = self.conv1x1(x) + self.conv3x3(x)
-        return self.act(y)
-        # return self.focus(self.act(y))
-
-    def fuse_repconv(self):
-        if not hasattr(self, 'fusedconv'):   
-            self.fusedconv = nn.Conv2d(self.conv3x3.conv.in_channels, 
-                                        self.conv3x3.conv.out_channels, 
-                                        self.conv3x3.conv.kernel_size, 
-                                        self.conv3x3.conv.stride, 
-                                        self.conv3x3.conv.padding, 
-                                        self.conv3x3.conv.groups, 
-                                        bias=True)
-
-        kernel, bias = self.get_equivalent_kernel_bias()
-        self.fusedconv.weight.data = kernel
-        self.fusedconv.bias.data = bias
-        for para in self.parameters():
-            para.detach_()
-        if hasattr(self, 'conv3x3'):
-            self.__delattr__('conv3x3')
-        if hasattr(self, 'conv1x1'):
-            self.__delattr__('conv1x1')
-
-    def get_equivalent_kernel_bias(self):
-        kernel3x3, bias3x3 = self._fuse_bn_tensor(self.conv3x3)
-        kernel1x1, bias1x1 = self._fuse_bn_tensor(self.conv1x1)
-        return kernel3x3 + self._pad_1x1_to_3x3_tensor(kernel1x1), bias3x3 + bias1x1
-
-    def _pad_1x1_to_3x3_tensor(self, kernel1x1):
-        if kernel1x1 is None:
-            return 0
-        else:
-            return nn.functional.pad(kernel1x1, [1, 1, 1, 1])
-
-    def _fuse_bn_tensor(self, branch):
-        if branch is None:
-            return 0, 0
-        kernel = branch.conv.weight
-        running_mean = branch.bn.running_mean
-        running_var = branch.bn.running_var
-        gamma = branch.bn.weight
-        beta = branch.bn.bias
-        eps = branch.bn.eps
-        std = (running_var + eps).sqrt()
-        t = (gamma / std).reshape((-1, 1, 1, 1))
-        return kernel * t, beta - running_mean * gamma / std 
-
-
-class AsymConv(nn.Module):
-    # Asymmetric Conv
-    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, act=True):
-        super().__init__()
-
-        self.convkxk = CB(c1, c2, k, s)            # k x k Conv 
-        self.conv1xk = CB(c1, c2, (1, k), s)       # 1 x k Conv
-        self.convkx1 = CB(c1, c2, (k, 1), s)       # k x 1 Conv
-        self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
-        # self.act = nn.ReLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
-        # self.focus = SPD() if focus is True else nn.Identity()
-
-
-    def forward(self, x):
-        if hasattr(self, 'fusedconv'):
-            y = self.fusedconv(x)
-        else:
-            
-            y_kxk = self.convkxk(x)
-            y_kx1 = self.convkx1(x)
-            y_1xk = self.conv1xk(x)
-            y = y_kxk + y_kx1 + y_1xk
-
-        return self.act(y)
-        # return self.focus(self.act(y))
-
-
-    def fuse_asymconv(self):
-        if not hasattr(self, 'fusedconv'):   
-            self.fusedconv = nn.Conv2d(self.convkxk.conv.in_channels, 
-                                        self.convkxk.conv.out_channels, 
-                                        self.convkxk.conv.kernel_size, 
-                                        self.convkxk.conv.stride, 
-                                        self.convkxk.conv.padding, 
-                                        self.convkxk.conv.groups, 
-                                        bias=True
-                                        )
-
-        kernel, bias = self.get_equivalent_kernel_bias()
-        self.fusedconv.weight.data = kernel
-        self.fusedconv.bias.data = bias     
-        for para in self.parameters():
-            para.detach_()
-        if hasattr(self, 'convkxk'):
-            self.__delattr__('convkxk')
-        if hasattr(self, 'convkx1'):
-            self.__delattr__('convkx1')
-        if hasattr(self, 'conv1xk'):
-            self.__delattr__('conv1xk')
-
-
-    def get_equivalent_kernel_bias(self):
-        # fuse conv * bn
-        kernelkxk, biaskxk = self._fuse_bn_tensor(self.convkxk)
-        kernel1xk, bias1xk = self._fuse_bn_tensor(self.conv1xk)
-        kernelkx1, biaskx1 = self._fuse_bn_tensor(self.convkx1)
-        
-        # fuse branch
-        self._add_to_square_kernel(kernelkxk, kernel1xk)
-        self._add_to_square_kernel(kernelkxk, kernelkx1)
-
-        return kernelkxk, biaskxk + bias1xk + biaskx1
-    
-    # fuse conv & bn
-    def _fuse_bn_tensor(self, branch):
-        if branch is None:
-            return 0, 0
-        kernel = branch.conv.weight
-        running_mean = branch.bn.running_mean
-        running_var = branch.bn.running_var
-        gamma = branch.bn.weight
-        beta = branch.bn.bias
-        eps = branch.bn.eps
-        std = (running_var + eps).sqrt()
-        t = (gamma / std).reshape((-1, 1, 1, 1))
-        return kernel * t, beta - running_mean * gamma / std 
-    
-    # fuse sym-kernel & asym-kernel
-    def _add_to_square_kernel(self, square_kernel, asym_kernel):
-        asym_h = asym_kernel.size(2)
-        asym_w = asym_kernel.size(3)
-        square_h = square_kernel.size(2)
-        square_w = square_kernel.size(3)
-        square_kernel[:, 
-                      :, 
-                      square_h // 2 - asym_h // 2: square_h // 2 - asym_h // 2 + asym_h,
-                      square_w // 2 - asym_w // 2: square_w // 2 - asym_w // 2 + asym_w
-                     ] += asym_kernel
-
 
 class DWConv(Conv):
     # Depth-wise convolution class
@@ -241,6 +85,7 @@ class Bottleneck(nn.Module):
 
     def forward(self, x):
         return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
+
 
 
 class CrossConv(nn.Module):
@@ -271,6 +116,7 @@ class C3(nn.Module):
         return self.cv3(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1))
 
 
+
 class C3x(C3):
     # C3 module with cross-convolutions
     def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):
@@ -282,7 +128,6 @@ class C3x(C3):
 class ESE(nn.Module):
     """ Effective Squeeze-Excitation
     From `CenterMask : Real-Time Anchor-Free Instance Segmentation` - https://arxiv.org/abs/1911.06667
-    Forward(640x640): 0.1591 ms
     """
     def __init__(self, c1, act=True):
         super().__init__()
@@ -328,6 +173,20 @@ class SPPF(nn.Module):
             return self.cv2(torch.cat((x, y1, y2, self.m(y2)), 1))
 
 
+class ProtoNet(nn.Module):
+    # Proto Net in YOLACT 
+    def __init__(self, c1, c2=32):
+        super().__init__()
+        c_ = min(c1, 256)  # number of hidden protos
+        self.cv1 = Conv(c1, c_, 3, 1)
+        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.cv2 = Conv(c_, c_, 3, 1)
+        self.cv3 = Conv(c_, c2, 1, 1)
+
+    def forward(self, x):
+        return self.cv3(self.cv2(self.upsample(self.cv1(x))))
+
+
 class Concat(nn.Module):
     # Concatenate a list of tensors along dimension
     def __init__(self, dimension=1):
@@ -362,6 +221,7 @@ def attempt_load(weights, device=None, inplace=True, fuse=True):
         ckpt = torch.load(w, map_location='cpu')  # load
         ckpt = (ckpt.get('ema') or ckpt['model']).to(device).float()  # FP32 model
         model.append(ckpt.fuse().eval() if fuse else ckpt.eval())  # fused or un-fused model in eval mode
+
 
     # Compatibility updates
     for m in model.modules():
@@ -418,7 +278,6 @@ class DetectMultiBackend(nn.Module):
         #   ONNX OpenCV DNN:                *.onnx with --dnn
 
         super().__init__()
-        # from models.experimental import attempt_load, attempt_download  # scoped to avoid circular import
 
         w = str(weights[0] if isinstance(weights, list) else weights)
         # pt, jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs = self.model_type(w)  # get backend
@@ -435,13 +294,11 @@ class DetectMultiBackend(nn.Module):
         if pt:  # PyTorch
             model = attempt_load(weights if isinstance(weights, list) else w, device=device)
             stride = max(int(model.stride.max()), 32)  # model stride
-            # tag = model.tag if hasattr(model, 'tag') else 'YOLOV5' # model tag: yolov5/x
             nk = model.nk if hasattr(model, 'nk') else 0 
             kpt_kit = model.kpt_kit if hasattr(model, 'kpt_kit') else None 
             names = model.module.names if hasattr(model, 'module') else model.names  # get class names
             model.half() if fp16 else model.float()
             self.model = model  # explicitly assign for to(), cpu(), cuda(), half()
-
         elif dnn:  # ONNX OpenCV DNN
             LOGGER.info(f'Loading {w} for ONNX OpenCV DNN inference...')
             check_requirements(('opencv-python>=4.5.4',))
@@ -455,11 +312,10 @@ class DetectMultiBackend(nn.Module):
             session = onnxruntime.InferenceSession(w, providers=providers)
             meta = session.get_modelmeta().custom_metadata_map  # metadata
             if 'stride' in meta:
-                stride, names = int(meta['stride']), eval(meta['names'])
+                stride, names, nk = int(meta['stride']), eval(meta['names']), int(meta['nk'])
        
         # assign all variables to self
         self.__dict__.update(locals())  
-
 
     def forward(self, im, augment=False, visualize=False, val=False):
         # YOLOv5 MultiBackend inference
@@ -476,6 +332,7 @@ class DetectMultiBackend(nn.Module):
         
         if isinstance(y, np.ndarray):
             y = torch.tensor(y, device=self.device)
+
         return (y, []) if val else y
 
     def warmup(self, imgsz=(1, 3, 640, 640)):
@@ -506,6 +363,4 @@ class DetectMultiBackend(nn.Module):
         with open(f, errors='ignore') as f:
             d = yaml.safe_load(f)
         return d['stride'], d['names']  # assign stride, names
-
-
 

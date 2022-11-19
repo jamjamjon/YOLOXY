@@ -33,7 +33,7 @@ except (ImportError, AssertionError):
 
 
 class Loggers():
-    # YOLOv5 Loggers class
+    # Loggers class
     def __init__(self, save_dir=None, weights=None, opt=None, hyp=None, logger=None, include=LOGGERS):
         self.save_dir = save_dir
         self.weights = weights
@@ -54,11 +54,12 @@ class Loggers():
             'val/box_loss',
             'val/obj_loss',
             'val/cls_loss',  
-            'val/kpt_loss',  # val loss
-            'val/seg_loss',  
+            'val/kpt_loss',  
+            'val/seg_loss',   # val loss
             'x/lr0',
             'x/lr1',
-            'x/lr2']  # params
+            'x/lr2'
+        ]  # params
         
         self.best_keys = ['best/epoch', 'best/precision', 'best/recall', 'best/mAP_0.5', 'best/mAP_0.5:0.95']
         for k in LOGGERS:
@@ -69,7 +70,7 @@ class Loggers():
         if not wandb:
             prefix = colorstr('Weights & Biases: ')
             # prefix = '[bold gold1]Weights & Biases: [/bold gold1]'
-            s = f"{prefix}run 'pip install wandb' to automatically track and visualize YOLOX-BETA 🚀 runs (RECOMMENDED)"
+            s = f"{prefix}run 'pip install wandb' to automatically track and visualize YOLOXY-BETA  runs (RECOMMENDED)"
             self.logger.info(emojis(s))
             # self.logger.print(emojis(s))
 
@@ -115,7 +116,7 @@ class Loggers():
                 plot_images(imgs, targets, masks, paths, f, nk=nk)  
 
 
-    def on_train_batch_end(self, ni, model, imgs, targets, paths, plots, nk):
+    def on_train_batch_end(self, ni, model, imgs, targets, paths, plots):
         # Callback runs on train batch end
         if plots:
             if ni == 0:

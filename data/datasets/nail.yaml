@@ -1,0 +1,19 @@
+# parent
+# ├── YOLOXY
+# └── datasets
+#     └── coco128-seg  ←  here 
+
+
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+path: ../datasets/nail/train  # dataset root dir
+train: images  # train images (relative to 'path') 128 images
+val: images  # val images (relative to 'path') 128 images
+test:  # test images (optional)
+
+
+# Classes & Keypoints
+nm: 32   # number of segmentation mask
+nc: 1  # number of classes
+names: ['nail']  # class names
+
+

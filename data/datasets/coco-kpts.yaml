@@ -9,6 +9,7 @@ train: images/val2017  # train images
 val: images/val2017 # val images 
 
 # Classes & Keypoints
+nm: 32
 nc: 1  # number of classes
 nk: 17   # number of keypoints (optional, 0 => bbox detection; > 0 => keypoints)
 kpt_lr_flip_idx: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]   # left-right flip for kpts, required when using ==> hyp['fliplr']

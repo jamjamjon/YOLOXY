@@ -14,7 +14,7 @@ import torch
 from tqdm import tqdm
 
 FILE = Path(__file__).resolve()
-ROOT = FILE.parents[1]  # YOLOv5 root directory
+ROOT = FILE.parents[1]  # root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
@@ -25,7 +25,7 @@ from utils.callbacks import Callbacks
 from utils.dataloaders import create_dataloader
 from utils.general import (LOGGER, CONSOLE, check_dataset, check_img_size, check_requirements, check_yaml,
                            coco80_to_coco91_class, colorstr, emojis, increment_path, print_args,
-                           scale_coords, xywh2xyxy, xyxy2xywh)
+                           scale_coords, scale_coords_kpts_xxyy, xywh2xyxy, xyxy2xywh)
 from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, time_sync
@@ -175,10 +175,7 @@ def run(
                                        rect=rect,
                                        workers=workers,
                                        prefix=colorstr(f'{task}: '),
-                                       # nk=model.nk      # kpt
                                        kpt_kit=model.kpt_kit,
-                                       # downsample_ratio=seg_downsample_rate,  # seg
-                                        # overlap=True   # seg
                                        )[0]
 
 
@@ -187,9 +184,8 @@ def run(
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
     
-    s = ('%25s' + '%8s' * 2) % ('CLASS', 'IMGs', 'GTs')
-    s += ('%10s' * 4) % ('P', 'R', 'mAP.5', 'mAP:.95')
-    # s += ('%10s' * 5) % ('|', 'P', 'R', 'mAP.5', 'mAP:.95')
+    s = ('%33s' + '%8s' * 2) % ('CLASS', 'IMGs', 'GTs')
+    s += ('%10s' * 4) % ('P', 'R', 'mAP:.5', 'mAP:.5-95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
     # TODO: mloss setting remove loss
@@ -197,9 +193,9 @@ def run(
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
                         
-    pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', colour='#FFF0F5', postfix='Val')  # progress bar
-    # for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+    pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', postfix='Val')  # progress bar
     for batch_i, (im, targets, paths, shapes, masks) in enumerate(pbar):
+        
         callbacks.run('on_val_batch_start')
         t1 = time_sync()
         if cuda:
@@ -213,15 +209,14 @@ def run(
 
         # Inference
         out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
-        
-        # kpt
+
+        # kpts
         # out = out[...,:6] if model.nk == 0 else out
         # targets = targets[..., :6] if model.nk == 0 else targets
 
         dt[1] += time_sync() - t2
 
-        # Loss
-        # TODO: remove loss
+        # Loss, not used
         if compute_loss:
             loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
 
@@ -256,21 +251,22 @@ def run(
             predn = pred.clone()
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
             if model.nk > 0:
-                scale_coords(im[si].shape[1:], predn[:, 6:], shape, shapes[si][1], nk=model.nk, step=3)  # native-space pred
+                # scale_coords(im[si].shape[1:], predn[:, 6:], shape, shapes[si][1], nk=model.nk, step=3)  # native-space pred
+                scale_coords_kpts_xxyy(im[si].shape[1:], predn[:, 6:], shape, shapes[si][1], nk=model.nk)  # xxyy
 
             # Evaluate
             if nl:
                 tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
                 scale_coords(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
 
-                # kpt
-                if model.nk > 0:
-                    tkpt = labels[:, 5:]
-                    scale_coords(im[si].shape[1:], tkpt, shape, shapes[si][1], nk=model.nk)  # native-space labels
+                # TODO: kpt
+                # if model.nk > 0:
+                #     tkpt = labels[:, 5:]
+                #     scale_coords(im[si].shape[1:], tkpt, shape, shapes[si][1], nk=model.nk)  # native-space labels
 
 
                 labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-                correct = process_batch(predn, labelsn, iouv)
+                correct = process_batch(predn, labelsn, iouv)  # only deal with bbox
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
             stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))  # (correct, conf, pcls, tcls)
@@ -284,11 +280,10 @@ def run(
 
         # Plot images
         # TODO: callbacks.run('on_val_batch_start', ni, imgs, targets, paths, plots, nk, 10)  # plot batch images
-        if plots and batch_i < 5:
+        if plots and batch_i < 10:
             plot_images(im, targets, masks, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, nk=model.nk)  # labels
-            plot_images(im, output_to_target(out), masks, paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=model.nk)  # pred
-
-        callbacks.run('on_val_batch_end')
+            plot_images(im, output_to_target(out, kpts_format='xxyycc', nk=model.nk), masks, paths, save_dir / f'val_batch{batch_i}_pred.jpg', names, nk=model.nk)  # pred
+        callbacks.run('on_val_batch_end') 
 
     # Compute metrics
     stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
@@ -301,7 +296,7 @@ def run(
         nt = torch.zeros(1)
 
     # Print results
-    pf = '%25s' + '%8i' * 2 + '%10.3g' * 4  # print format
+    pf = '%33s' + '%8i' * 2 + '%10.3g' * 4  # print format
     LOGGER.info(pf % ('ALL', seen, nt.sum(), mp, mr, map50, map))
 
     # Print results per class
@@ -355,8 +350,6 @@ def run(
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
 
-    # TODO: remove loss
-    # remove result.csv val_loss parts
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 

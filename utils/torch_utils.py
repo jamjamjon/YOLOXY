@@ -100,7 +100,7 @@ def time_sync():
 
 
 def profile(input, ops, n=10, device=None):
-    # YOLOv5 speed/memory/FLOPs profiler
+    # YOLO speed/memory/FLOPs profiler
     #
     # Usage:
     #     input = torch.randn(16, 3, 640, 640)
@@ -111,8 +111,8 @@ def profile(input, ops, n=10, device=None):
     results = []
     if not isinstance(device, torch.device):
         device = select_device(device)
-    print(f"{'Params':>12s}{'GFLOPs':>12s}{'GPU_mem (GB)':>14s}{'forward (ms)':>14s}{'backward (ms)':>14s}"
-          f"{'input':>24s}{'output':>24s}")
+    print(f"{'PARAMS(M)':>12s}{'GFLOPs':>12s}{'GPU_MEM(GB)':>14s}{'FORWARD(ms)':>14s}{'BACKWARD(ms)':>14s}"
+          f"{'INPUT':>24s}{'OUTPUT':>24s}")
 
     for x in input if isinstance(input, list) else [input]:
         x = x.to(device)
@@ -141,7 +141,7 @@ def profile(input, ops, n=10, device=None):
                     tb += (t[2] - t[1]) * 1000 / n  # ms per op backward
                 mem = torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0  # (GB)
                 s_in, s_out = (tuple(x.shape) if isinstance(x, torch.Tensor) else 'list' for x in (x, y))  # shapes
-                p = sum(x.numel() for x in m.parameters()) if isinstance(m, nn.Module) else 0  # parameters
+                p = sum(x.numel() for x in m.parameters()) if isinstance(m, nn.Module) / 1e6 else 0  # parameters
                 print(f'{p:12}{flops:12.4g}{mem:>14.3f}{tf:14.4g}{tb:14.4g}{str(s_in):>24s}{str(s_out):>24s}')
                 results.append([p, flops, mem, tf, tb, s_in, s_out])
             except Exception as e:
@@ -199,11 +199,13 @@ def prune(model, amount=0.3):
 
 
 
-# TODO: calculate MAC
 def model_info(model, verbose=False, img_size=640):
     # Model information. img_size may be int or list, i.e. img_size=640 or img_size=[640, 320]
-    n_p = sum(x.numel() for x in model.parameters())  # number parameters
+
+    # TODO: bug here !!!
+    n_p = sum(x.numel() for x in model.parameters()) # number parameters
     n_g = sum(x.numel() for x in model.parameters() if x.requires_grad)  # number gradients
+
     if verbose:
         print(f"{'layer':>5} {'name':>40} {'gradient':>9} {'parameters':>12} {'shape':>20} {'mu':>10} {'sigma':>10}")
         for i, (name, p) in enumerate(model.named_parameters()):
@@ -235,8 +237,9 @@ def model_info(model, verbose=False, img_size=640):
     # except Exception:
     #     pass
 
-    name = Path(model.yaml_file).stem.replace('yolov5', 'YOLOv5') if hasattr(model, 'yaml_file') else 'Model'
-    LOGGER.info(f"{colorstr(f'Summary ({name})')} 👉 {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
+    name = Path(model.yaml_file).stem if hasattr(model, 'yaml_file') else 'Model'
+    LOGGER.info(f"{colorstr(f'Summary({name})')} => {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
+
 
 
 def scale_img(img, ratio=1.0, same_shape=False, gs=32):  # img(16,3,256,416)

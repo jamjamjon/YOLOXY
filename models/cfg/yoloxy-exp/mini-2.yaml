@@ -1,0 +1,58 @@
+
+# Parameters
+depth_multiple: 0.33  # model depth multiple
+width_multiple: 0.25  # layer channel multiple
+
+
+# ||| ===>  only for testing model ----> python models/yolo.py --cfg
+# nc: 2  # number of classes, not required!
+# nk: 5   # not required ! num of keypoints, (required, specify in data/project/xxx.yaml)
+# nm: 32   # not required!
+
+
+architure:
+  [ # [from, number, module, args] 
+    # backbone 
+    # [-1, 1, Conv, [64, 6, 2, 2]],      # 0 P1 / 2
+    [-1, 1, Conv, [64, 3, 2]],      # 0 P1 / 2
+    [-1, 1, Conv, [128, 3, 2]],          # 1-P2/4
+    [-1, 3, C2, [128, True]],                   # 2    C3IB(16, 16, 3, e=0.5, fused=False, ese=False)
+    [-1, 1, Conv, [256, 3, 2]],         # 3-P3/8
+    [-1, 6, C2, [256, True]],                   # 4 
+    [-1, 1, Conv, [512, 3, 2]],         # 5 -P4/16
+    [-1, 9, C2, [512, True]],                  # 6
+    [-1, 1, Conv, [1024, 3, 2]],       # 7-P5/32
+    [-1, 3, C2, [1024, True]],                    # 8
+    [-1, 1, SPPF, [1024, 5]],              # 9       
+
+    # neck
+    [-1, 1, Conv, [512, 1, 1]],    # 10
+    [-1, 1, nn.Upsample, [None, 2, 'nearest']],   # 11
+    [[-1, 6], 1, Concat, [1]],     # cat backbone P4 12
+    [-1, 3, C2, [512, False]],    # 13   
+
+    [-1, 1, Conv, [256, 1, 1]],    # 14
+    [-1, 1, nn.Upsample, [None, 2, 'nearest']],  # 15
+    [[-1, 4], 1, Concat, [1]],     # cat backbone P3 16
+    [-1, 3, C2, [256, False]],    # 22 (P3/8-small) -> 17
+    # [-1, 1, nn.BatchNorm2d, []],    # bn   18 
+
+    [-1, 1, Conv, [256, 3, 2]],    # 18   TODO: GSConv   19
+    [[-1, 14], 1, Concat, [1]],    # cat head P4  19    20 
+    [-1, 3, C2, [512, False]],    # 26 (P4/16-medium)  -> 20   21 
+    # [-1, 1, nn.BatchNorm2d, []],    # bn   22
+
+    [-1, 1, Conv, [512, 3, 2]],    # 21   TODO: GSConv  23
+    [[-1, 10], 1, Concat, [1]],    # cat head P5  22  24 
+    [-1, 3, C2, [1024, False]],    # 23 (P5/32-large)    25
+    # [-1, 1, nn.BatchNorm2d, []],    # bn   26
+
+    # head:
+    # [[17, 20, 23], 1, Detect, [nn.Conv2d, nc, nk]],     # Detect(P3, P4, P5)
+    # [[17, 20, 23], 1, Detect, [HydraXHead, nc, nk]],      # TODO
+    # [[17, 20, 23], 1, Detect, [HydraXHead]],      # TODO
+
+    [[17, 20, 23], 1, Detect, []],      # new format
+    # [[18, 22, 26], 1, Detect, []],      # has bn 
+
+  ]

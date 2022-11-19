@@ -19,8 +19,10 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 
 from utils.general import (CONFIG_DIR, FONT, LOGGER, Timeout, check_font, check_requirements, clip_coords,
-                           increment_path, is_ascii, threaded, try_except, xywh2xyxy, xyxy2xywh, binary_mask_to_polygon, get_paired_coord)
+                           increment_path, is_ascii, threaded, try_except, xywh2xyxy, xyxy2xywh, 
+                            binary_mask_to_polygon, get_paired_coord, scale_image)
 from utils.metrics import fitness
+# from utils.general import mask_iou, process_mask, process_mask_upsample, 
 
 
 # Settings
@@ -66,6 +68,7 @@ def check_pil_font(font=FONT, size=10):
             return ImageFont.load_default()
 
 
+
 class Annotator:
     # YOLOv5 Annotator for train/val mosaics and jpgs and detect/hub inference annotations
     def __init__(self, im, line_width=None, font_size=None, font='Arial.ttf', pil=False, example='abc'):
@@ -82,9 +85,25 @@ class Annotator:
             self.im = im
         self.lw = line_width or max(round(sum(im.shape) / 2 * 0.003), 2)  # line width
 
-    def box_label(self, box, label='', color=(128, 128, 128), txt_color=(255, 255, 255), nk=0, kpts=None):
+    def box_label(self, 
+                  box, 
+                  label='', 
+                  color=(128, 128, 128), 
+                  txt_color=(255, 255, 255), 
+                  nk=0, 
+                  kpts=None, 
+                  kpt_thresh=0.5, 
+                  kpts_format='xyxy',
+                  kpts_skeleton_pairs=None,
+                  show_kpts_index=False,
+                  is_coco=False,    
+                  ):
 
-        kpt_thresh = 0.5
+        # 17 keypoints skeleton 
+        if is_coco:
+            kpts_skeleton_pairs = [[15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11],
+                            [6, 12], [5, 6], [5, 7], [6, 8], [7, 9], [8, 10], [1, 2],
+                            [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6]]
 
         # Add one xyxy box to image with label
         if self.pil or not is_ascii(label):
@@ -97,18 +116,10 @@ class Annotator:
                      box[1] + 1 if outside else box[1] + h + 1),
                     fill=color,
                 )
-                # self.draw.text((box[0], box[1]), label, fill=txt_color, font=self.font, anchor='ls')  # for PIL>8.0
                 self.draw.text((box[0], box[1] - h if outside else box[1]), label, fill=txt_color, font=self.font)
 
             # draw keypoints
             if kpts is not None and nk > 0:
-                if nk == 17:
-                    skeleton_pair = [[16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12],
-                                    [7, 13], [6, 7], [6, 8], [7, 9], [8, 10], [9, 11], [2, 3],
-                                    [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]]
-                else:
-                    skeleton_pair = []
-
 
                 # draw circle
                 step = len(kpts) // nk
@@ -116,36 +127,65 @@ class Annotator:
 
                 # iter kpts
                 for idx in range(nk):
-                    x, y = kpts[step * idx], kpts[step * idx + 1]
-                    if not (x % w_ == 0 or y % h_ == 0):
-                        if step == 3:   # when det
+                    if kpts_format == 'xyxy':
+                        x, y = kpts[step * idx], kpts[step * idx + 1]
+                        if step == 3:
                             conf = kpts[step * idx + 2]
-                            if conf < kpt_thresh:   # filter kpt which conf < 0.5
-                                continue
+                        else:
+                            conf = None
+
+                    elif kpts_format == 'xxyy':
+                        x, y = kpts[idx], kpts[idx + nk]
+                        if step == 3:
+                            conf = kpts[idx + 2 * nk]
+                        else:
+                            conf = None
+                    if not (x % w_ == 0 or y % h_ == 0):
+                        if conf is not None and conf <= kpt_thresh:   # filter kpt which conf < 0.5
+                            continue
                         r_ = max(3, self.lw)  # radius
                         self.draw.ellipse((x-r_, y-r_, x+r_, y+r_), 'cyan', 'green', width=1)
 
-                # draw connection
-                for idx, kpt_pair in enumerate(skeleton_pair):
 
-                    p1 = (kpts[(kpt_pair[0] - 1) * step], kpts[(kpt_pair[0] - 1) * step + 1])
-                    p2 = (kpts[(kpt_pair[1] - 1) * step], kpts[(kpt_pair[1] - 1) * step + 1])
+                # draw skeleton
+                if kpts_skeleton_pairs is not None:
 
-                    # has conf when detection
-                    if step == 3:
-                        conf1 = kpts[(kpt_pair[0] - 1) * step + 2]
-                        conf2 = kpts[(kpt_pair[1] - 1) * step + 2]
-                        if conf1 < kpt_thresh or conf2 < kpt_thresh:
+                    assert np.array(kpts_skeleton_pairs).max() <= nk, "Max kpts index != nk!"
+
+                    for idx, kpts_pair in enumerate(kpts_skeleton_pairs):
+
+                        if kpts_format == 'xyxy':
+                            p1 = (kpts[(kpts_pair[0]) * step], kpts[(kpts_pair[0]) * step + 1])
+                            p2 = (kpts[(kpts_pair[1]) * step], kpts[(kpts_pair[1]) * step + 1])
+                            if step == 3:
+                                conf_1 = kpts[(kpts_pair[0]) * step + 2]
+                                conf_2 = kpts[(kpts_pair[1]) * step + 2]
+                            else:
+                                conf_1, conf_2 = None, None
+
+                        elif kpts_format == 'xxyy':
+                            p1 = (int(kpts[(kpts_pair[0])]), int(kpts[(kpts_pair[0]) + nk]))
+                            p2 = (int(kpts[(kpts_pair[1])]), int(kpts[(kpts_pair[1]) + nk]))
+                            if step == 3:
+                                conf_1 = kpts[(kpts_pair[0]) + 2 * nk]
+                                conf_2 = kpts[(kpts_pair[1]) + 2 * nk]
+                            else:
+                                conf_1, conf_2 = None, None
+
+                        # has conf, but less than kpt_thresh
+                        if conf_1 is not None and conf_2 is not None:
+                            if conf_1 < kpt_thresh or conf_2 < kpt_thresh:
+                                continue
+
+                        # filter outliers
+                        if p1[0] % w_ == 0 or p1[1] % h_ == 0 or p1[0] < 0 or p1[1] < 0:
+                            continue
+                        if p2[0] % w_ == 0 or p2[1] % h_ == 0 or p2[0] < 0 or p2[1] < 0:
                             continue
 
-                    # filter outliers
-                    if p1[0] % w_ == 0 or p1[1] % h_ == 0 or p1[0] < 0 or p1[1] < 0:
-                        continue
-                    if p2[0] % w_ == 0 or p2[1] % h_ == 0 or p2[0] < 0 or p2[1] < 0:
-                        continue
-
-                    r_ = min(3, self.lw)  # radius
-                    self.draw.line((p1, p2), 'yellow', width=r_)
+                        # draw line
+                        r_ = min(3, self.lw)  # radius
+                        self.draw.line((p1, p2), 'yellow', width=r_)
 
 
         else:  # cv2
@@ -168,52 +208,140 @@ class Annotator:
             # draw keypoints
             if kpts is not None and nk > 0:
 
-                if nk == 17:
-                    skeleton_pair = [[16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12],
-                                    [7, 13], [6, 7], [6, 8], [7, 9], [8, 10], [9, 11], [2, 3],
-                                    [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]]
-                else:
-                    skeleton_pair = []
-
-
                 # draw circle
                 step = len(kpts) // nk
                 w_, h_ = self.im.shape[0], self.im.shape[1]  # 
 
                 # iter kpts
                 for idx in range(nk):
-                    x, y = kpts[step * idx], kpts[step * idx + 1]
-                    if not (x % w_ == 0 or y % h_ == 0):
-                        if step == 3:   # when det
+                    # x, y = kpts[step * idx], kpts[step * idx + 1]
+                    # x, y = kpts[2 * idx], kpts[2 * idx + 1]
+                    kpt_color = (77 * idx % 255, 177 * idx % 255, 277 * idx % 255)
+
+                    if kpts_format == 'xyxy':
+                        x, y = kpts[step * idx], kpts[step * idx + 1]
+                        if step == 3:
                             conf = kpts[step * idx + 2]
-                            if conf < kpt_thresh:   # filter kpt which conf < 0.5
+                        else:
+                            conf = None
+                    elif kpts_format == 'xxyy':
+                        x, y = kpts[idx], kpts[idx + nk]
+                        if step == 3:
+                            conf = kpts[idx + 2 * nk]
+                        else:
+                            conf = None
+
+                    if not (x % w_ == 0 or y % h_ == 0):
+                        if conf is not None and conf <= kpt_thresh:   # filter kpt which conf < 0.5
+                            continue
+                        r_ = max(4, self.lw)  # radius
+                        # cv2.circle(self.im, (int(x), int(y)), int(r_), kpt_color, -1)
+                        cv2.circle(self.im, (int(x), int(y)), int(r_), (0, 215, 255), -1)  # gold
+
+                        # kpts index
+                        if show_kpts_index:
+                            cv2.putText(self.im,
+                                        str(idx), 
+                                        (int(x) + 5, int(y) + 2),
+                                        0,
+                                        0.3,
+                                        # kpt_color,
+                                        (0, 250, 127), # light green
+                                        thickness=1,
+                                        lineType=cv2.LINE_AA)
+
+
+                # draw skeleton
+                if kpts_skeleton_pairs is not None:
+                    assert np.array(kpts_skeleton_pairs).max() <= nk, "Max kpts index != nk!"
+
+                    # iter kpts pair
+                    for idx, kpts_pair in enumerate(kpts_skeleton_pairs):
+
+                        if kpts_format == 'xyxy':
+                            p1 = (kpts[(kpts_pair[0]) * step], kpts[(kpts_pair[0]) * step + 1])
+                            p2 = (kpts[(kpts_pair[1]) * step], kpts[(kpts_pair[1]) * step + 1])
+                            if step == 3:
+                                conf_1 = kpts[(kpts_pair[0]) * step + 2]
+                                conf_2 = kpts[(kpts_pair[1]) * step + 2]
+                            else:
+                                conf_1, conf_2 = None, None
+
+                        elif kpts_format == 'xxyy':
+                            p1 = (int(kpts[(kpts_pair[0])]), int(kpts[(kpts_pair[0]) + nk]))
+                            p2 = (int(kpts[(kpts_pair[1])]), int(kpts[(kpts_pair[1]) + nk]))
+                            if step == 3:
+                                conf_1 = kpts[(kpts_pair[0]) + 2 * nk]
+                                conf_2 = kpts[(kpts_pair[1]) + 2 * nk]
+                            else:
+                                conf_1, conf_2 = None, None
+
+
+                        # has conf, but less than kpt_thresh
+                        if conf_1 is not None and conf_2 is not None:
+                            if conf_1 <= kpt_thresh or conf_2 <= kpt_thresh:
                                 continue
-                        r_ = max(2, self.lw)  # radius
-                        cv2.circle(self.im, (int(x), int(y)), int(r_), (0, 255, 0), -1)
 
-                # draw connection
-                for idx, kpt_pair in enumerate(skeleton_pair):
-
-                    p1 = (int(kpts[(kpt_pair[0] - 1) * step]), int(kpts[(kpt_pair[0] - 1) * step + 1]))
-                    p2 = (int(kpts[(kpt_pair[1] - 1) * step]), int(kpts[(kpt_pair[1] - 1) * step + 1]))
-
-                    # has conf when detection
-                    if step == 3:
-                        conf1 = kpts[(kpt_pair[0] - 1) * step + 2]
-                        conf2 = kpts[(kpt_pair[1] - 1) * step + 2]
-                        if conf1 < kpt_thresh or conf2 < kpt_thresh:
+                        # filter outliers
+                        if p1[0] % w_ == 0 or p1[1] % h_ == 0 or p1[0] < 0 or p1[1] < 0:
+                            continue
+                        if p2[0] % w_ == 0 or p2[1] % h_ == 0 or p2[0] < 0 or p2[1] < 0:
                             continue
 
-                    # filter outliers
-                    if p1[0] % w_ == 0 or p1[1] % h_ == 0 or p1[0] < 0 or p1[1] < 0:
-                        continue
-                    if p2[0] % w_ == 0 or p2[1] % h_ == 0 or p2[0] < 0 or p2[1] < 0:
-                        continue
-
-                    r_ = min(2, self.lw)  # radius
-                    cv2.line(self.im, p1, p2, (0, 255, 0), thickness=r_) 
+                        # draw 
+                        r_ = min(2, self.lw)  # radius
+                        cv2.line(self.im, p1, p2, (0, 255, 0), thickness=r_) 
 
 
+
+    def masks(self, masks, colors, im_gpu=None, alpha=0.5):
+        """Plot masks at once.
+        Args:
+            masks (tensor): predicted masks on cuda, shape: [n, h, w]
+            colors (List[List[Int]]): colors for predicted masks, [[r, g, b] * n]
+            im_gpu (tensor): img is in cuda, shape: [3, h, w], range: [0, 1]
+            alpha (float): mask transparency: 0.0 fully transparent, 1.0 opaque
+        """
+        if self.pil:
+            # convert to numpy first
+            self.im = np.asarray(self.im).copy()
+        if im_gpu is None:
+            # Add multiple masks of shape(h,w,n) with colors list([r,g,b], [r,g,b], ...)
+            if len(masks) == 0:
+                return
+            if isinstance(masks, torch.Tensor):
+                masks = torch.as_tensor(masks, dtype=torch.uint8)
+                masks = masks.permute(1, 2, 0).contiguous()
+                masks = masks.cpu().numpy()
+            # masks = np.ascontiguousarray(masks.transpose(1, 2, 0))
+            masks = scale_image(masks.shape[:2], masks, self.im.shape)
+            masks = np.asarray(masks, dtype=np.float32)
+            colors = np.asarray(colors, dtype=np.float32)  # shape(n,3)
+            s = masks.sum(2, keepdims=True).clip(0, 1)  # add all masks together
+            masks = (masks @ colors).clip(0, 255)  # (h,w,n) @ (n,3) = (h,w,3)
+            self.im[:] = masks * alpha + self.im * (1 - s * alpha)
+        else:
+
+            if len(masks) == 0:
+                self.im[:] = im_gpu.permute(1, 2, 0).contiguous().cpu().numpy() * 255
+
+
+            colors = torch.tensor(colors, device=im_gpu.device, dtype=torch.float32) / 255.0
+            colors = colors[:, None, None]  # shape(n,1,1,3)
+            masks = masks.unsqueeze(3)  # shape(n,h,w,1)
+            masks_color = masks * (colors * alpha)  # shape(n,h,w,3)
+
+            inv_alph_masks = (1 - masks * alpha).cumprod(0)  # shape(n,h,w,1)
+            mcs = (masks_color * inv_alph_masks).sum(0) * 2  # mask color summand shape(n,h,w,3)
+
+            im_gpu = im_gpu.flip(dims=[0])  # flip channel
+            im_gpu = im_gpu.permute(1, 2, 0).contiguous()  # shape(h,w,3)
+            im_gpu = im_gpu * inv_alph_masks[-1] + mcs
+            im_mask = (im_gpu * 255).byte().cpu().numpy()
+            self.im[:] = scale_image(im_gpu.shape, im_mask, self.im.shape)
+        if self.pil:
+            # convert im back to PIL and update draw
+            self.fromarray(self.im)
 
 
     def rectangle(self, xy, fill=None, outline=None, width=1):
@@ -228,6 +356,7 @@ class Annotator:
     def result(self):
         # Return annotated image as array
         return np.asarray(self.im)
+
 
 
 def feature_visualization(x, module_type, stage, n=32, save_dir=Path('runs/detect/exp')):
@@ -280,32 +409,30 @@ def butter_lowpass_filtfilt(data, cutoff=1500, fs=50000, order=5):
     return filtfilt(b, a, data)  # forward-backward filter
 
 
-# def output_to_target(output):
-#     # Convert model output to target format [batch_id, class_id, x, y, w, h, conf]
-#     targets = []
-#     for i, o in enumerate(output):
-#         for *box, conf, cls in o.cpu().numpy():
-#             targets.append([i, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
-#     return np.array(targets)
 
-
-def output_to_target(output):
+def output_to_target(output, kpts_format='xycxyc', nk=0):
     # update kpts
     # Convert model output to target format [batch_id, class_id, x, y, w, h, conf]
     targets = []
     for i, o in enumerate(output):
         kpts = o[:,6:]
+
+        # xxyycc2xycxyc
+        if kpts_format == 'xxyycc':   
+            # kpts[:, 0::3], kpts[:, 1::3], kpts[:, 2::3] = kpts[:, : nk], kpts[:, nk: 2 * nk], kpts[:, 2*nk: ]  # wrong
+            k = torch.zeros_like(kpts)
+            k[:, 0::3], k[:, 1::3], k[:, 2::3] = kpts[:, : nk], kpts[:, nk: 2*nk], kpts[:, 2*nk: 3*nk]
+            kpts = k
+
         o = o[:,:6]
         for index, (*box, conf, cls) in enumerate(o.cpu().numpy()):
             targets.append([i, cls, *list(*xyxy2xywh(np.array(box)[None])), conf, *list(kpts.cpu().numpy()[index])])
     return np.array(targets)
 
 
-# @threaded
+@threaded
 def plot_images(images, targets, masks, paths=None, fname='images.jpg', names=None, 
-                max_size=1920, max_subplots=25,
-                nk=0,
-                ):
+                max_size=1920, max_subplots=25, nk=0):
 
     # Plot image grid with labels
     if isinstance(images, torch.Tensor):
@@ -313,7 +440,7 @@ def plot_images(images, targets, masks, paths=None, fname='images.jpg', names=No
     if isinstance(targets, torch.Tensor):
         targets = targets.cpu().numpy()
     if isinstance(masks, torch.Tensor):
-        masks = masks.cpu().numpy()
+        masks = masks.cpu().numpy().astype(int)
 
     # de-normalise (optional)
     if np.max(images[0]) <= 1:
@@ -345,13 +472,16 @@ def plot_images(images, targets, masks, paths=None, fname='images.jpg', names=No
     
     # i proceed with i before
     for i in range(i + 1):
+        # print(f'i---> {i}')
         x, y = int(w * (i // ns)), int(h * (i % ns))  # block origin
         annotator.rectangle([x, y, x + w, y + h], None, (255, 255, 255), width=2)  # borders
         if paths:
             annotator.text((x + 5, y + 5 + h), text=Path(paths[i]).name[:40], txt_color=(220, 220, 220))  # filenames
         
         if len(targets) > 0:
-            ti = targets[targets[:, 0] == i]  # image targets
+            idx = targets[:, 0] == i
+            
+            ti = targets[idx]  # image targets
             boxes = xywh2xyxy(ti[:, 2:6]).T
             classes = ti[:, 1].astype('int')
             labels = ti.shape[1] == 6 + nk * 2  # labels if no conf column
@@ -360,7 +490,7 @@ def plot_images(images, targets, masks, paths=None, fname='images.jpg', names=No
                 if conf is None:
                     kpts = ti[:, 6:].T   # GT kpts
                 else:
-                    kpts = ti[:, 7:].T   # preds kpts
+                    kpts = ti[:, 7:].T   # preds kpts   # TODO for kpts
 
             else:
                 kpts = None
@@ -413,13 +543,19 @@ def plot_images(images, targets, masks, paths=None, fname='images.jpg', names=No
                     label = f'{cls}' if labels else f'{cls} {conf[j]:.1f}'
                     
                     if kpts is not None:
-                        annotator.box_label(box, label, color=color, kpts=kpts[:, j], nk=nk)
+                        # annotator.box_label(box, label, color=color, kpts=kpts[:, j], nk=nk)
+                        annotator.box_label(box, label, color=color, kpts=kpts[:, j], nk=nk,
+                                                # kpt_thresh=conf_kpts_thres, 
+                                                # kpts_format='xxyy',
+                                                # kpts_skeleton_pairs=None,
+                                                )
                     else:
                         annotator.box_label(box, label, color=color, nk=nk)
 
 
 
             # Plot masks
+            # if len(masks):     # or, at least has one item is True(non-zero)
             if masks.any():     # or, at least has one item is True(non-zero)
                 if masks.max() > 1.0:  # mean that masks are overlap
                     # print(f'overlap')

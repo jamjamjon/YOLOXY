@@ -1,7 +1,7 @@
 """
 Parse Model Config & Build YOLO Model 
 Usage:
-    $ python path/to/models/yolo.py --cfg xxx.yaml
+    $ python path/to/models/yolo.py --cfg xxx.yaml --fuse
 """
 
 import argparse
@@ -14,7 +14,7 @@ import rich
 
 
 FILE = Path(__file__).resolve()
-ROOT = FILE.parents[1]  # YOLOv5 root directory
+ROOT = FILE.parents[1]  # root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 if platform.system() != 'Windows':
@@ -36,6 +36,7 @@ except ImportError:
 
 class Model(nn.Module):
     # YOLO model
+    # def __init__(self, cfg=None, ch=3, nc=None, nk=None, nm=None): 
     def __init__(self, cfg=None, ch=3, nc=None, nk=None): 
         super().__init__()
 
@@ -52,17 +53,19 @@ class Model(nn.Module):
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
 
         # num of classes
-        if nc and nc != self.yaml['nc']:
-            LOGGER.info(f"{colorstr(f'Overriding model.yaml') } nc={self.yaml['nc']} with nc={nc}")
+        self.yaml['nc'] = self.yaml.get('nc', 80)  # 80 default
+        if nc and nc != self.yaml['nc']: 
+            LOGGER.info(f"{colorstr('Detection overriding')} nc={self.yaml.get('nc', 80)} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
 
         # num of keypoints
-        if nk and nk != self.yaml.get('nk', 0):
-            LOGGER.info(f"{colorstr(f'Overriding model.yaml')} nk={self.yaml.get('nk', 0)} with nk={nk}")
-            self.yaml.update({'nk': nk})  # override yaml value
+        self.yaml['nk'] = self.yaml.get('nk', 0)  # 0 default
+        if nk and nk != self.yaml['nk']:
+            LOGGER.info(f"{colorstr('Keypoints overriding')} nk={self.yaml.get('nk', 0)} with nk={nk}")
+            self.yaml['nk'] = nk  # override yaml value
 
         # parse model
-        self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
+        self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch], nc=nc, nk=nk)  # model, savelist
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default det names
         self.inplace = self.yaml.get('inplace', True)
 
@@ -75,7 +78,6 @@ class Model(nn.Module):
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
             self.stride = m.stride
             self._initialize_biases()  # only run once
-
 
         # Init weights, biases
         initialize_weights(self)
@@ -116,23 +118,16 @@ class Model(nn.Module):
 
     def _descale_pred(self, p, flips, scale, img_size):
         # de-scale predictions following augmented inference (inverse operation)
-        if self.inplace:
-            p[..., :4] /= scale  # de-scale
-            if flips == 2:
-                p[..., 1] = img_size[0] - p[..., 1]  # de-flip ud
-            elif flips == 3:
-                p[..., 0] = img_size[1] - p[..., 0]  # de-flip lr
-        else:
-            x, y, wh = p[..., 0:1] / scale, p[..., 1:2] / scale, p[..., 2:4] / scale  # de-scale
-            if flips == 2:
-                y = img_size[0] - y  # de-flip ud
-            elif flips == 3:
-                x = img_size[1] - x  # de-flip lr
-            p = torch.cat((x, y, wh, p[..., 4:]), -1)
+        # inplace default
+        p[..., :4] /= scale  # de-scale
+        if flips == 2:
+            p[..., 1] = img_size[0] - p[..., 1]  # de-flip ud
+        elif flips == 3:
+            p[..., 0] = img_size[1] - p[..., 0]  # de-flip lr
         return p
 
     def _clip_augmented(self, y):
-        # Clip YOLOv5 augmented inference tails
+        # Clip augmented inference tails
         nl = self.model[-1].nl  # number of detection layers (P3-P5)
         g = sum(4 ** x for x in range(nl))  # grid points
         e = 1  # exclude layer count
@@ -161,33 +156,13 @@ class Model(nn.Module):
         # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
         m = self.model[-1]  # Detect() module
         for mi, s in zip(m.m, m.stride):  # from
-            
-            # # decoupled head
-            # if type(mi) is Decouple:
-            #     # obj
-            #     b = mi.b2.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
-            #     b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-            #     mi.b2.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-            #     # box
-            #     # cls
-            #     b = mi.c.bias.data
-            #     b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-            #     mi.c.bias = torch.nn.Parameter(b, requires_grad=True)
-                
-            # # decoupled head
-            # elif type(mi) is HydraHead:
-            #     # obj
-            #     b = mi.conv_obj.conv2d.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
-            #     b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-            #     mi.conv_obj.conv2d.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-            #     # box
-            #     # cls
-            #     b = mi.conv_cls.conv2d.bias.data
-            #     b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-            #     mi.conv_cls.conv2d.bias = torch.nn.Parameter(b, requires_grad=True)
-
+            # if type(mi) is Hydra:
+            #     b = mi.conv_cls.conv2d.bias.view(m.na, -1)   # (na, 1+nc)
+            #     b.data[:, 1] += math.log(8 / (640 / s) ** 2)  # obj 
+            #     b.data[:, 1:] += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
+            #     mi.conv_cls.conv2d.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
             # decoupled head
-            if type(mi) is HydraXHead:
+            if type(mi) in (HydraX, Hydra):
                 # obj
                 b = mi.conv_obj.conv2d.bias.view(m.na, -1)   # conv.bias(3*1) to (3,1)
                 b.data[:] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
@@ -197,8 +172,6 @@ class Model(nn.Module):
                 b = mi.conv_cls.conv2d.bias.data
                 b += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
                 mi.conv_cls.conv2d.bias = torch.nn.Parameter(b, requires_grad=True)
-
-           
             # coupled head
             else:  # default
                 b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
@@ -228,14 +201,11 @@ class Model(nn.Module):
                 m.conv = fuse_conv_and_bn(m.conv, m.bn)  # update conv
                 delattr(m, 'bn')  # remove batchnorm
                 m.forward = m.forward_fuse  # update forward
-            # RepConv
-            if isinstance(m, RepConv):
+            if isinstance(m, RepConv):  # RepConv
                 m.fuse_repconv()
-            # AsymConv
-            if isinstance(m, AsymConv):
+            if isinstance(m, AsymConv):  # AsymConv
                 m.fuse_asymconv()
-            # RepConvs
-            if isinstance(m, RepConvs):
+            if isinstance(m, RepConvs):# RepConvs
                 m.fuse()
 
 
@@ -249,25 +219,25 @@ class Model(nn.Module):
         # Apply to(), cpu(), cuda(), half() to model tensors that are not parameters or registered buffers
         self = super()._apply(fn)
         m = self.model[-1]  # Detect()
-        # if isinstance(m, Detect):
-        #     m.stride = fn(m.stride)
-        #     m.grid = list(map(fn, m.grid))
+        if isinstance(m, Detect):
+            m.stride = fn(m.stride)
+            m.grid = list(map(fn, m.grid))
         #     if isinstance(m.anchor_grid, list):
         #         m.anchor_grid = list(map(fn, m.anchor_grid))
         return self
 
 
 # Parse model config
-def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
+def parse_model(d, ch, nc=0, nk=0):  # model_dict(.yaml), input_channels(3)
     # CONSOLE.log(log_locals=True)      # local variables
 
     # rich table
     model_table = rich.table.Table(highlight=False, box=rich.box.ROUNDED)
     model_attrs = {
-        "IDX": "right",
+        "BLOCK": "right",
         "FROM": "right",
-        "N": "left",
-        "PARAMS(M)": "right",
+        "NUM": "left",
+        "PARAMS": "right",
         "MODULE": "left",
         "ARGUMENTS": "left",
     }
@@ -275,8 +245,15 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         model_table.add_column(f"{k}", justify=v, style="", no_wrap=True)
 
     # params
-    na, nc, nk, gd, gw = 1, d['nc'], d['nk'], d['depth_multiple'], d['width_multiple']
-    no = na * (nc + 5 + nk * 2)   # number of outputs = anchors * (classes + 5 + 2 * keypoints)
+    na, gd, gw = 1, d['depth_multiple'], d['width_multiple']
+
+    # nc, nk, no
+    if nc is None:
+        nc = d.get('nc', 80)
+    if nk is None:
+        nk = d.get('nk', 0)
+    no = na * (nc + 5 + nk * 2)   # number of outputs = anchors * (classes + 5 + 2 * keypoints + segment masks)
+
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
 
     # model structure
@@ -287,17 +264,13 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
     elif d.get('neck', None) is not None:
         struct = d['backbone'] + d['neck'] + d['head']
 
-
     # parse
     for i, (f, n, m, args) in enumerate(struct):  # from, number, module, args
         m = eval(m) if isinstance(m, str) else m  # eval strings
 
         for j, a in enumerate(args):
             try:
-                # print(f'a: {a} | type: {type(a)}')
                 args[j] = eval(a) if isinstance(a, str) else a  # eval strings
-
-                # print(f'args: {args}')
 
             except NameError:
                 pass
@@ -305,31 +278,28 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in (Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
                  BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x,
-                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv, PatchConv, Patchify, RepConvs, GSConv   # update
-                 ):
+                 RepConv, C3xSA, CrossConvSA, SPPCSPC, C3xESE, AsymConv, PatchConv, Patchify, RepConvs, GSConv,   # update
+                 CPN, S3, SS3, Extract, ExtractBlock, C3CDW, LiteCSP, S4, S5):
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
 
             args = [c1, c2, *args[1:]]
-            if m in [BottleneckCSP, C3, C3TR, C3Ghost, C3x, C3xSA, SPPCSPC, C3xESE]:
+            if m in [BottleneckCSP, C3, C3TR, C3Ghost, C3x, C3xSA, SPPCSPC, C3xESE, C3CDW, LiteCSP]:
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is nn.BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
-
         elif m is SPD:
             c2 = 4 * ch[f]
-
         elif m in (Detect, ):  # Detect
             args.append([ch[x] for x in f])
-
-
+            # args.extend([nc, nk])
+            args.extend([nc, nk])
         elif m in (HydraXHead, ):  # HydraXHead
             args.append([ch[x] for x in f])
-            
         elif m is Contract:
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
@@ -339,7 +309,7 @@ def parse_model(d, ch):  # model_dict(.yaml), input_channels(3)
 
         m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)  # module
         t = str(m)[8:-2].replace('__main__.', '')  # module name
-        np = sum(x.numel() for x in m_.parameters()) / 1E6  # number params
+        np = sum(x.numel() for x in m_.parameters())  # number params
         m_.i, m_.f, m_.type, m_.np = i, f, t, np  # attach index, 'from' index, type, number params
 
         # save model structure to table
@@ -359,7 +329,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size h,w')
     parser.add_argument('--batch-size', type=int, default=1, help='total batch size for all GPUs')
-    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml')
     parser.add_argument('--profile', action='store_true', help='profile model speed')
     parser.add_argument('--line-profile', action='store_true', help='profile model speed layer by layer')
@@ -373,10 +343,6 @@ if __name__ == '__main__':
 
     device = select_device(opt.device)   # device
     imgsz = opt.imgsz
-
-    # if opt.batch_size == -1:  # single-GPU only, estimate best batch size
-    #         batch_size = check_train_batch_size(model, imgsz, amp)
-
     im = torch.rand(opt.batch_size, 3, opt.imgsz, opt.imgsz).to(device)     # dummpy input
 
 
@@ -392,6 +358,8 @@ if __name__ == '__main__':
             # for i, l in enumerate(list(model.modules())):
             #     print(f'{i}:::::: {l}')
 
+            # print(model)
+
         # print model
         if opt.detail:
             LOGGER.info(model)
@@ -402,7 +370,7 @@ if __name__ == '__main__':
 
         # profile forward-backward
         if opt.profile:  
-            results = profile(input=im, ops=[model], n=30)
+            results = profile(input=im, ops=[model], n=100, device=device)
 
         # output shape
         if opt.output:
@@ -416,14 +384,52 @@ if __name__ == '__main__':
 
     # playground
     if opt.check:
+        pass
 
-        x = torch.rand(2, 32, 640, 640).to(device)
+        # x = torch.rand(1, 32, 640, 640).to(device)
 
-        gsconv = GSConv(32, 128, 3)
-        conv = Conv(32, 128, 3)
+        # c = Conv(32, 64, 3, 2)
+        # e = Extract(32, 64, 3, 2)
+        # print(e)
+        # print(c)
+        # _ = profile(input=x, ops=[e, c], n=6, device=device)
 
-        print(gsconv, conv)
-        _ = profile(input=x, ops=[gsconv, conv], n=5, device=device)
+
+        # s = STAIRS(32, 32, 2)
+        # s4 = S4(32, 32)
+
+        # print(s)
+        # print(s4)
+
+        # _ = profile(input=x, ops=[s, s4], n=100, device=device)
+
+
+        # gsconv = GSConv(32, 128, 3)
+        # conv = Conv(32, 128, 3)
+
+        # print(gsconv, conv)
+
+        # _ = profile(input=x, ops=[gsconv, conv], n=5, device=device)
+
+        x = torch.rand(1, 32, 640, 640).to(device)
+        c3 = C3(32, 32, 2)
+        c3x = C3x(32, 32, 2)
+        lite_csp = LiteCSP(32, 32, 2)
+        # # c3cdw = C3CDW(32, 32, 2)
+        cpn = CPN(32, 32, 1)
+        # lite_cpn = LiteCPN(32, 32, 1)
+        s3 = S3(32, 32)
+        ss3 = SS3(32, 32)
+
+        # print(lite_cpn)
+        # _ = profile(input=x, ops=[c3, c3x, lite_csp, cpn, s3], n=3, device=device)
+        _ = profile(input=x, ops=[c3, cpn, s3, ss3], n=1, device=device)
+
+
+        # c = CDW(3, 64)
+        # c = C3CDW(3, 3, 2)
+        # print(c)
+        # _ = profile(input=x, ops=[c], n=1, device=device)
 
 
         # # Inception Like Conv
@@ -432,10 +438,6 @@ if __name__ == '__main__':
 
         # # repconvs.fuse()
         # _ = profile(input=x, ops=[repconvs], n=5, device=device)
-
-        x = torch.rand(1, 3, 640, 640).to(device)
-        
-        
 
 #         # Inception Like Conv
 #         # ilc = ILConv(3, 16, 3, 2).to(device)
