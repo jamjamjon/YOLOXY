@@ -5,52 +5,66 @@
 - [x] Object Detection
 - [x] Keypoint Detection
 - [x] Multi Objects Tracking(ByteTrack)
-- [ ] Instance Segmentation(SparseInst)  
 - [ ] Model Prune
 
 
-## Updates
-==> 2022.08.29: **Nano** size model achieve **32.6% mAP** (coco2017 val) with **2.69M params** and **5.7GFLOPs**\
-==> 2022.09.08: **Nano** size model achieve **33.8% mAP** (coco2017 val) with **2.35M params** and **5.2GFLOPs**\
-==> 2022.09.17: **Small** size model achieve **42.0% mAP** (coco2017 val) with **7.37M params** and **18.3GFLOPs**
+Object Detection | Object Detection With Keypoints | 
+:-------------------------:| :-------------------------:|
+<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" width="440"> | <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/ikun.jpeg" width="560"> |
 
-## Pretained Models 
-### Nano size
-|Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>(G) 
-|---|---|---|---|---
-|YOLOv5n(v6.2)      		|640 |28.0 |**1.9** |**4.5** 
-|YOLOX-n      			|416 |25.8 |**0.91** |**1.08** 
-|YOLOX-tiny      		|416 |32.8 |5.06 |6.45 
-|YOLOv6-N     			|640 |36.3 |4.3 |**11.1** 
-|RTMDet-tiny     		|640 |**40.9** |4.8 |**8.1** 
-|**[YOLOXY-N(ours)](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/N.pt)**      	|640 |**33.8**|2.35|5.2 
 
-### Small size
-|Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>(G) 
-|---|---|---|---|---
-|YOLOv5s(v6.2) 				|640 |37.4 |7.23 |16.53  
-|YOLOX-s 				|640 |40.5 |9.0  |26.8
-|PP-YOLOE+_s     			|640 |43.7 |7.93 |17.36
-|YOLOv6-S     				|640 |43.8 |17.2 |44.2
-|YOLOv7-tiny-SiLU     			|640 |38.7 |**6.2** |**13.8**
-|RTMDet-s     				|640 |**44.5** |8.89 |**14.8** 
-|**[YOLOXY-S(ours)](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/S.pt)**      		|640 |**42.0**|7.37|18.3
+<details close>
+<summary>Other Demo</summary>	
+
+Face Detection With Keypoints  | Face Detection With Keypoints |
+:-------------------------:|:-------------------------:
+<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" width="500"> | <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FACE.jpg" width="500"> |
+
+</details>
+
+
+<details open>
+<summary>Benchmark</summary>	
+
+**Nano Size**
+|Model |size|mAP<sup>val<br>0.5:0.95 |Params(M) |FLOPs(G) | Speed(ms)<br>b32 fp32<br>RTX2080Ti
+|---|---|---|---|---|---
+|YOLOv5n(v6.2)      		|640 |28.0 |1.9 |4.5 |**0.8**
+|YOLOv6-N     			|640 |36.3 |4.3 |11.1| 1.38
+|YOLOX-Nano      		|416 |25.8 |**0.91** |**1.08** | -
+|**[YOLOXY-N](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/yoloxy-n.pt)**      	|640|**33.9**|**1.97**|**4.3**|**0.8**
+
+**Small Size** 
+|Model |size|mAP<sup>val<br>0.5:0.95 |Params(M) |FLOPs(G) | Speed(ms)<br>b32 fp32<br>RTX2080Ti
+|---|---|---|---|---|---
+|YOLOv5s(v6.2) 				|640 |37.4 |7.23 |16.53 |**1.4**
+|YOLOv6-S     				|640 |43.8 |17.2 |44.2| 3.49
+|YOLOX-s 				|640 |40.5 |9.0  |26.8| -
+|PP-YOLOE+_s     			|640 |43.7 |7.93 |17.36| -
+|RTMDet-s     				|640 |**44.5** |8.89 |14.8 | -
+|**[YOLOXY-S](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/yoloxy-s.pt)**     |640 |**42.0**|7.71|16.7|**1.4**
 
 <!-- 
-### Small size
-|Model |size|mAP<sup>val<br>0.5:0.95 |params<br><sup>(M) |FLOPs<br><sup>(G) | b1 2080Ti | b32 2080Ti
+### Tiny Size 
+|Model |size|mAP<sup>val<br>0.5:0.95 |Params(M) |FLOPs(G) 
 |---|---|---|---|---
-|YOLOv5s(v6.2)              |640 |37.4 |7.23 |16.53  | 5.5| 7.5 
-|YOLOX-s                |640 |40.5 |9.0  |26.8 | | 
-|PP-YOLOE+_s                |640 |43.7 |7.93 |17.36 | | 
-|YOLOv6-S                   |640 |43.8 |17.2 |44.2 | 5.0| 3.74
-|YOLOv7-tiny-SiLU               |640 |38.7 |**6.2** |**13.8** | | 
-|RTMDet-s                   |640 |**44.5** |8.89 |**14.8**  | | 
-|**[YOLOXY-S(ours)](https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/S.pt)**              |640 |**42.0**|7.37|18.3 | | 
-|YOLOXY-s                   |640 |**42.1** | |  | 7.3| 1.5
+|YOLOv6-T     			|640 |41.1 |15.0 |36.7
+|YOLOv7-tiny-SiLU     		|640 |38.7 |6.2 |13.8
+|YOLOX-Tiny      		|416 |32.8 |5.06 |6.45 
+|RTMDet-Tiny     		|640 |40.9 |4.8 |8.1 
+|**YOLOXY-Tiny**      	|640 |training|4.3|9.5
  -->
 
-## Installation
+</details>
+
+
+
+## Quick Start
+
+
+<details close>
+<summary>Installation</summary>	
+
 **Python>=3.7.0**, **PyTorch>=1.8.1**
 
 ```bash
@@ -59,52 +73,83 @@ cd YOLOXY
 pip install -r requirements.txt  # install
 ```
 
-## Inference / Demo 
+</details>
+
+
+<details close>
+<summary>Inference Detection</summary>	
+
 ```bash
-python tools/detect.py --weights N.pt	--source 0  # webcam
-			 N-face-kpts.pt	  img.jpg  # image
-					  video.mp4  # video
-					  ./data/images/  # image directory
-					  'rtsp://admin:admin12345@192.168.0.188/h264'  # RTSP
+python tools/detect.py --weights yoloxy-n.pt --conf 0.5 --source 0  		# webcam
+								 img.jpg  	# image
+								 video.mp4  	# video
+								 ./data/images/  # image directory
+								 rtsp://admin:admin12345@192.168.0.177/h264  # RTSP stream
 ```
 
-Object Detection | Human Pose Estimation | Object Detection with Keypoints
-:-------------------------:|:-------------------------:|:-------------------------:
-<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/bus-N.jpg" width="300"> |<img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/kunball.png" width="400"> | <img src="https://github.com/jamjamjon/YOLOXY/releases/download/v1.0/FADID-FACE.bmp" width="300"> |
+</details>
 
+<details close>
+<summary>Inference Detection With Keypoints</summary>	
 
+**`--is-coco`** means to draw skeleton for COCO human keypoints(17). It is optional.
 
-## Multi Objects Tracking
 ```bash
-python tools/detect.py --weights N.pt	--source rtsp://admin:admin12345@192.168.0.188/h264 --tracking
+python tools/detect.py --weights yoloxy-s-coco-kpts.pt --conf 0.4 --kpts-conf 0.5 --is-coco --source 0  		# webcam
+											   	     img.jpg  	# image
+											             video.mp4  	# video
+											  	     ./data/images/  # image directory
+											  	     rtsp://admin:admin12345@192.168.0.177/h264  # RTSP stream
 ```
 
-## Test mAP
+</details>
 
-```
-python tools/val.py --weights N.pt --data data/datasets/coco.yaml
-```
-```
-Summary(N) 333 layers, 2357167 parameters, 5.2 GFLOPs, 33.8% mAP
 
-Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.338
-Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.515
-Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.356
-Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.159
-Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.368
-Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.471
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.297
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.491
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.535
-Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.324
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.586
-Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.702
 
+<details close>
+<summary>Inference With Multi Objects Tracking(MOT)</summary>
+
+```bash
+python tools/detect.py --weights yoloxy-n.pt --tracking --source rtsp://admin:admin12345@192.168.0.188/h264 
 ```
 
-	
+</details>
 
-## Train For Object Detection
+
+<details close>
+<summary>Test mAP</summary>
+
+```
+python tools/val.py --weights yoloxy-n.pt --data data/datasets/coco.yaml --img 640 --conf 0.001 --iou 0.65
+```
+
+</details>
+
+
+<details close>
+<summary>Test Speed</summary>
+
+```
+python tools/val.py --weights yoloxy-n.pt --task speed --data data/datasets/coco.yaml --img 640 --batch 32
+```
+
+</details>
+
+
+<details close>
+<summary>Export ONNX</summary>
+
+```bash
+python tools/export.py  --weights yoloxy-s.pt --img 640 --simplify  --include onnx
+```
+
+
+</details>
+
+
+<details close>
+<summary>Training</summary>
+
 
 __Directories Structure__
 ```
@@ -118,34 +163,41 @@ parent
    	  └── images
    	  └── labels
 ```
-	
-<details close>
-<summary>Train Custom Dataset</summary>	
-	
+		
 **same as YOLOv5, [check this](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data)**
 
 
 __Train From Stratch__
 ```bash
-python tools/train.py --data data/projects/your-custom-dataset.yaml --cfg models/cfg/N.yaml --batch-size -1
+# Single GPU
+python tools/train.py --data data/datasets/your-custom-dataset.yaml --cfg models/cfg/yoloxy-n.yaml --batch-size 32
+
+# Multi-GPU
+python -m torch.distributed.run -nproc_per_node 4 tools/train.py --data data/datasets/your-custom-dataset.yaml --cfg models/cfg/yoloxy-n.yaml --batch 128 --device 0,1,2,3
 ```
 __Transfer Learning__
 ```bash
-python tools/train.py --data data/projects/your-custom-dataset.yaml --weights N.pt --batch-size -1
+# Single GPU
+python tools/train.py --data data/datasets/your-custom-dataset.yaml --weights yoloxy-n.pt --batch-size 32
+
+# Multi-GPU
+python -m torch.distributed.run -nproc_per_node 4 tools/train.py --data data/datasets/your-custom-dataset.yaml --weights yoloxy-n.pt --batch 128 --device 0,1,2,3
 ```
 </details>
 	
 	
-	
-## Train For Keypoints Detection
-	
 <details close>
-<summary>Train Custom Dataset</summary>	
+<summary>Training With Keypoints</summary>
 
-	
-**Make sure your keypoints label has following format**
+**Keypoints Label Format 1: **`kpt_x, kpt_y, kpt_visibility(conf)`****
 
-	
+```bash
+# class_id x_center y_center width height kpt1_x kpt1_y kpt1_visibility kpt2_x kpt2_y kpt2_visibility ... kptn_x kptn_y kptn_visibility (normalized, 0-1)
+0  0.03369140625 0.4786450662739323 0.0205078125 0.03829160530191458 0.0 0.0 0.0 0.04082421875 0.4736480117820324 1.0 0.03767578125 0.48089396170839466 2.0 0.033203125 0.48838880706921944 2.0 0.0403271484375 0.48813843888070696 2.0 	# one object
+```
+
+****Keypoints Label Format 2: `kpt_x, kpt_y`****
+
 ```bash
 # class_id x_center y_center width height kpt1_x kpt1_y kpt2_x kpt2_y ... kptn_x kptn_y (normalized, 0-1)
 0  0.03369140625 0.4786450662739323 0.0205078125 0.03829160530191458 0.0317119140625 0.4736480117820324 0.04082421875 0.4736480117820324 0.03767578125 0.48089396170839466 0.033203125 0.48838880706921944 0.0403271484375 0.48813843888070696   	# one object
@@ -153,7 +205,7 @@ python tools/train.py --data data/projects/your-custom-dataset.yaml --weights N.
 ```
 
 	
-__step 1. Prepare Your Dataset.yaml__
+**step 1. Prepare Dataset.yaml**
 ```
 parent
 ├── YOLOXY
@@ -163,24 +215,22 @@ parent
 
 ```
 	
-**Modify **`nk`** and **`kpt_lr_flip_idx`** in your-dataset.yaml**
+**And modify configs**
 
 ```bash
-# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+# datasets path
 path: ../datasets/coco-kpts  # dataset root dir
 train: images/train2017  # train images 
 val: images/val2017 # val images 
 
 # Classes & Keypoints
 nc: 1  # number of classes
-nk: 17   # number of keypoints (optional, 0 => bbox detection; > 0 => keypoints)
-kpt_lr_flip_idx: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]   # left-right flip for kpts, required when using ==> hyp['fliplr']
-
 names: ['person']
+nk: 17   # number of keypoints
+kpt_lr_flip_idx: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]   # left-right flip for kpts, required when using ==> hyp['fliplr']
 ```
-
 	
-__step 2. Prepare Your Dataset__	
+**step 2. Prepare Dataset**
 ```
 parent
 ├── YOLOXY
@@ -191,32 +241,21 @@ parent
       └── your-datasets  ←  put here
    	  └── images
    	  └── labels
+```	
+
+**step 3. Training**
+
+```bash
+# Single GPU
+python tools/train.py --data data/datasets/your-custom-dataset.yaml --weights yoloxy-s-coco-kpts.pt --batch 32
+
+# Multi-GPU
+python -m torch.distributed.run -nproc_per_node 4 tools/train.py --data data/datasets/your-custom-dataset.yaml --weights yoloxy-s-coco-kpts.pt --batch 128 --device 0,1,2,3
 ```
-	
-</details>	
+
+</details>
 
 
-__Train From Stratch__
-```bash
-python tools/train.py --data data/projects/FADID-FACE-19.yaml --cfg models/cfg/s.yaml --batch-size -1
-```
-__Transfer Learning__
-```bash
-python tools/train.py --data data/projects/FADID-FACE-19.yaml --weights s.pt --batch-size -1
-```
-	
-
-
-## Export To Deploy
-__General ONNX__
-```bash
-python tools/export.py  --weights s.pt --img 640 --simplify  --include onnx
-```
-__ONNX For RKNN__
-```bash
-python tools/export.py  --weights s.pt --img 640 --simplify  --include rknn --cali data/images/  # image dirdirectory
-								    	     calibration.txt 	# text file of images path 
-```
 
 ## References
 * [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
