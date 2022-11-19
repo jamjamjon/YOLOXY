@@ -379,11 +379,6 @@ class ComputeLoss:
         cost = (1.0 * pair_wise_cls_loss + 3.0 * pair_wise_ious_loss + 1e6 * (~is_in_boxes_and_center))  
         # cost = (pair_wise_cls_loss ** 1.0 + pair_wise_ious_loss ** 2.0 + 1e6 + (~is_in_boxes_and_center.float()))  
 
-        # print(f'pair_wise_cls_loss: {pair_wise_cls_loss.mean() * 2.0, pair_wise_cls_loss.min(), pair_wise_cls_loss.max()}')
-        # print(f'pair_wise_ious_loss: {pair_wise_ious_loss.mean() ** 2.0, pair_wise_ious_loss.min(), pair_wise_ious_loss.max()}')
-        # print(f'is_in_boxes_and_center: {(is_in_boxes_and_center.float() + 1e4).max()}')
-
-
         del pair_wise_ious_loss, pair_wise_cls_loss
 
         # if t_kpts is not None and p_kpts is not None:
@@ -598,15 +593,6 @@ class ComputeLoss:
 #             finalists_masks, num_finalists, finalists_masks_per_batch, tbox_per_batch
 #         ) = self.build_targets(preds, targets)
 
-#         # print(f'tbox_per_batch --->> {tbox_per_batch[0].shape}')  # [2,4]
-#         # print(f'tbox_per_batch len --->> {len(tbox_per_batch)}')  
-
-#         # print(f'finalists_masks_per_batch => {len(finalists_masks_per_batch)}')
-#         # print(f'finalists_masks_per_batch => {finalists_masks_per_batch[0].shape}')
-#         # print(f'finalists_masks_per_batch => {finalists_masks_per_batch[1].shape}')
-#         # print(f'finalists_masks_per_batch => {finalists_masks_per_batch[2].shape}')
-#         # print(f'finalists_masks => {finalists_masks.shape}')
-
 #         # compute loss
 #         lbox += (1.0 - bbox_iou(pbox.view(-1, 4)[finalists_masks], tbox, SIoU=True).squeeze()).sum() / num_finalists  # iou(prediction, target)
 #         lbox_l1 += (self.L1_BOX(pbox0.view(-1, 4)[finalists_masks], tbox_l1)).sum() / num_finalists
@@ -622,78 +608,41 @@ class ComputeLoss:
 #             # gt 
 #             # if masks.max() > 1.0:  # mean that GT masks are overlaped
 #             if overlap:
-#                 # print(f'GT mask shape : {masks.shape}')
-#                 # print(f'----> overlaped')
-#                 # print(f'overlaped masks ---> {masks.shape}')
-
 #                 if masks.max() == 0.0:   # negtive sample
 #                     continue
-
 #                 gt_masks = masks[[b]]  # (bs, 160, 160)  each mini-batch mask
-#                 # print(f'overlaped gtmask111 ---> {gt_masks.shape}')   # 1,160,160
-
 #                 nl = torch.sum(finalists_masks_per_batch[b]).item()   # mini-batch targets num
 #                 index = torch.arange(nl).reshape(nl, 1, 1) + 1     # (nl, 1, 1)
 #                 gt_masks = gt_masks.repeat(nl, 1, 1)    # repeate to (n, 160, 160)
 #                 gt_masks = torch.where(gt_masks == index.to(self.device), 1.0, 0.0)
-#                 # print(f'overlaped gtmask222 ---> {gt_masks.shape}')
-
 #             else:
-                
 #                 # ValueError: Target size (torch.Size([1, 160, 160])) must be the same as 
 #                 # input size (torch.Size([2, 160, 160]))
 #                 if masks.max() == 0.0:   # negtive sample
 #                     continue 
-#                 # print(f'not overlapedmasks ---> {masks.shape}')
-#                 # print(f'not overlaped! max ---> {masks.max()}')
 #                 # idx = targets[:, 0] == i
-
 #                 gt_masks = masks[[b]]  # TODO: not overlaped
-
-
-#                 # print(f'not overlaped gtmask111 ---> {gt_masks.shape}')
-
-
-#             # print(f'processed GT mask shape : {gt_masks.shape}')
 
 #             # preds 
 #             mask_coef = pseg[b][finalists_masks_per_batch[b]] #  mini-batch finalist mask coefficients (N, 32)
 #             # mask_coef = pseg.view(-1, self.no_mask)[finalists_masks] #  mini-batch finalist mask coefficients (N, 32)
 
-#             # print(f'pseg[b]  ===> {pseg[b].shape}')  # [8400, 32]
-#             # print(f'finalists_masks_per_batch[b]  ===> {finalists_masks_per_batch[b].shape}')  # [8400, 32]
-#             # print(f'pseg  ===> {pseg.shape}')  # [bs, 8400, 32]
-#             # print(f'mask_coef  ===> {mask_coef.shape}')   # [113, 32]  
-#             # print(f'pseg[b].view(-1, self.no_mask)[finalists_masks]  ===> {pseg[b].view(-1, self.no_mask)[finalists_masks_per_batch].shape}')   # [113, 32]  
-
 #             # pred mask: mask_coefficient @ proto_pred  => (n, 32) @ (32, 160, 160) -> (n, 160, 160)
 #             p_mask = (mask_coef @ p_protos[b].view(self.nm, -1)).view(-1, *(p_protos.shape[-2:]))
-#             # print(f'pred mask ===+> {p_mask.shape}')
 
 #             # calc loss 
-#             # pred_mask: ([n, 160, 160])
-#             # # gt_mask: ([n, 160, 160])
-#             # print(f'pred mask ---> {p_mask.shape}')
-#             # print(f'gt mask ---> {gt_masks.shape}')
-
 #             lseg_ = F.binary_cross_entropy_with_logits(p_mask, gt_masks, reduction="none")  #  ([n, 160, 160]) 
 
 #             # TODO: 
 #             # 1. gt mask xyxy &  box area (GT) normalized 
-#             # print(f'tbox_per_batch0 ---> {tbox_per_batch[0].shape}')
-#             # print(f'tbox_per_batch1 ---> {tbox_per_batch[1].shape}')
-#             # print(f'tbox ---> {tbox.shape}')
-
 #             tboxn = tbox_per_batch[b].mul(torch.Tensor([[1 / self.input_w, 1 / self.input_h] * 2]).type_as(tbox))    # xywh normalized
 #             marean = torch.prod(tboxn[:, -2:], dim=1, keepdim=True)  # mask bbox area normalized
 #             mxyxyn = xywh2xyxy(tboxn.mul_(torch.Tensor([p_protos.shape[-2: ] * 2]).type_as(tbox)))   # scale to proto size; xywh -> xyxy
-#             # print(f'mxyxyn ---> {mxyxyn.shape}')
 
 
 #             # 3. crop mask 
 #             lseg += (crop_mask(lseg_, mxyxyn).mean(dim=(1, 2)) / marean).mean()
-#             # print(f'lseg_: {(crop_mask(lseg_, mxyxyn).mean(dim=(1, 2)) / marean).mean()}')
-#             # print(f'lseg: {lseg}')
+
 
 
 #         # loss weighted
